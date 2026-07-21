@@ -117,11 +117,11 @@ jobs:
         if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         run: |
           cat > keystore.properties <<EOF
-storeFile=keystore/release-keystore.jks
-storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-keyAlias=${{ secrets.KEY_ALIAS }}
-keyPassword=${{ secrets.KEY_PASSWORD }}
-EOF
+          storeFile=keystore/release-keystore.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
 
       - name: Cache Gradle packages
         uses: actions/cache@v4

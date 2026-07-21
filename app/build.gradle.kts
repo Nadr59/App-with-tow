@@ -63,9 +63,12 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 
-    // ══════════════════════════════════════════
-    // ✅ أضف هذا السطر — يوفّر XML themes
-    // ══════════════════════════════════════════
+    // ═══════════════════════════════════════════════
+    // ✅ هذا السطر يحل مشكلة LifecycleService
+    // ═══════════════════════════════════════════════
+    implementation("androidx.lifecycle:lifecycle-service:2.7.0")
+
+    // ── Material (XML themes) ──
     implementation("com.google.android.material:material:1.11.0")
 
     // ── Hilt ──

@@ -3,6 +3,7 @@ package com.apppair.data.preferences
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -26,6 +27,7 @@ class AppPairPreferences @Inject constructor(
         private val APP1_PACKAGE = stringPreferencesKey("app1_package")
         private val APP2_PACKAGE = stringPreferencesKey("app2_package")
         private val SAVED_TASK_IDS = stringSetPreferencesKey("saved_task_ids")
+        private val SERVICE_ACTIVE = booleanPreferencesKey("service_active")
     }
 
     // ── حفظ التطبيقات المختارة ──
@@ -37,10 +39,20 @@ class AppPairPreferences @Inject constructor(
         prefs[APP2_PACKAGE]
     }
 
+    val serviceActive: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[SERVICE_ACTIVE] ?: false
+    }
+
     suspend fun saveSelectedApps(package1: String, package2: String) {
         context.dataStore.edit { prefs ->
             prefs[APP1_PACKAGE] = package1
             prefs[APP2_PACKAGE] = package2
+        }
+    }
+
+    suspend fun setServiceActive(active: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[SERVICE_ACTIVE] = active
         }
     }
 

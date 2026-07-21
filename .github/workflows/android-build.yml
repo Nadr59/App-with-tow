@@ -16,10 +16,6 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
 
-    env:
-      CMDLINE_TOOLS_VERSION: "11076708"
-      GRADLE_VERSION: "8.7"
-
     steps:
       # ── 1. Checkout ──
       - name: Checkout repository
@@ -33,16 +29,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ── 3. Cache Gradle ──
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties', '**/*.gradle.kts') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      # ── 3. Setup Gradle (يثبّت gradle CLI مباشرة) ──
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       # ── 4. Install Android SDK ──
       - name: Install Android SDK
@@ -50,10 +39,10 @@ jobs:
           JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
           ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
-          echo ">>> Installing Android SDK at $ANDROID_SDK_ROOT"
+          echo ">>> Installing Android SDK..."
           mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
 
-          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" \
+          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
             -O /tmp/cmdline-tools.zip
 
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-tmp
@@ -71,65 +60,38 @@ jobs:
 
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
 
-      # ── 5. Detect project & create local.properties ──
-      - name: Detect project and create local.properties
-        id: detect
+      # ── 5. Create local.properties ──
+      - name: Create local.properties
         run: |
-          echo ">>> Searching for project structure..."
-          find . -name "settings.gradle*" -type f
-          find . -name "build.gradle*" -type f
-          find . -name "gradlew" -type f
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo ">>> local.properties:"
+          cat local.properties
 
-          PROJECT_DIR="."
-          if [ -f "./settings.gradle.kts" ] || [ -f "./settings.gradle" ]; then
-            PROJECT_DIR="."
-          else
-            FOUND=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -1)
-            if [ -n "$FOUND" ]; then
-              PROJECT_DIR=$(dirname "$FOUND")
-            fi
-          fi
-
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo ">>> Project directory: $PROJECT_DIR"
-
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$PROJECT_DIR/local.properties"
-          echo ">>> local.properties created:"
-          cat "$PROJECT_DIR/local.properties"
-
-      # ── 6. Setup Gradle Wrapper ──
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
-
-      - name: Ensure Gradle Wrapper exists
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
+      # ── 6. Show project structure ──
+      - name: Show project structure
         run: |
-          cd "$PROJECT_DIR"
-          if [ ! -f "./gradlew" ]; then
-            echo ">>> gradlew not found — generating..."
-            gradle wrapper --gradle-version $GRADLE_VERSION
-          fi
-          chmod +x ./gradlew
-          echo ">>> Gradle version:"
-          ./gradlew --version
+          echo "=== Root files ==="
+          ls -la
+          echo ""
+          echo "=== Looking for build files ==="
+          find . -name "build.gradle*" -not -path "*/build/*" | head -20
+          echo ""
+          echo "=== Looking for settings ==="
+          find . -name "settings.gradle*" | head -5
+          echo ""
+          echo "=== Looking for gradlew ==="
+          find . -name "gradlew" | head -5 || echo "No gradlew found (OK - using gradle CLI)"
 
-      # ── 7. Build Debug APK ──
+      # ── 7. Build Debug APK (using gradle, NOT ./gradlew) ──
       - name: Build Debug APK
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          cd "$PROJECT_DIR"
-          ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace --info
 
       # ── 8. Upload ──
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: ${{ steps.detect.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: warn
 
   # ══════════════════════════════════════════════
@@ -139,10 +101,6 @@ jobs:
     name: Build Release APK
     runs-on: ubuntu-latest
     needs: build-debug
-
-    env:
-      CMDLINE_TOOLS_VERSION: "11076708"
-      GRADLE_VERSION: "8.7"
 
     steps:
       - name: Checkout repository
@@ -155,15 +113,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties', '**/*.gradle.kts') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Install Android SDK
         env:
@@ -171,7 +122,7 @@ jobs:
           ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
           mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" \
+          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
             -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-tmp
           mv /tmp/cmdline-tools-tmp/cmdline-tools "$ANDROID_SDK_ROOT/cmdline-tools/latest"
@@ -183,37 +134,10 @@ jobs:
             "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Detect project and create local.properties
-        id: detect
-        run: |
-          PROJECT_DIR="."
-          if [ -f "./settings.gradle.kts" ] || [ -f "./settings.gradle" ]; then
-            PROJECT_DIR="."
-          else
-            FOUND=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -1)
-            if [ -n "$FOUND" ]; then
-              PROJECT_DIR=$(dirname "$FOUND")
-            fi
-          fi
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$PROJECT_DIR/local.properties"
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
-
-      - name: Ensure Gradle Wrapper exists
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          cd "$PROJECT_DIR"
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version $GRADLE_VERSION
-          fi
-          chmod +x ./gradlew
-
-      # ── Check if keystore secret exists ──
+      # ── Check for signing keystore ──
       - name: Check for signing keystore
         id: check-keystore
         env:
@@ -224,7 +148,7 @@ jobs:
             echo ">>> Keystore secret found"
           else
             echo "has_keystore=false" >> "$GITHUB_OUTPUT"
-            echo ">>> No keystore secret — will build unsigned"
+            echo ">>> No keystore secret found — will build unsigned"
           fi
 
       # ── Decode keystore ──
@@ -235,19 +159,17 @@ jobs:
         run: |
           mkdir -p keystore
           echo "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
-          echo ">>> Keystore decoded, size: $(wc -c < keystore/release.jks) bytes"
+          ls -la keystore/release.jks
 
       # ── Build Signed Release ──
       - name: Build Signed Release APK
         if: steps.check-keystore.outputs.has_keystore == 'true'
         env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          cd "$PROJECT_DIR"
-          ./gradlew assembleRelease --no-daemon --stacktrace \
+          gradle assembleRelease --no-daemon --stacktrace --info \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/keystore/release.jks" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
@@ -256,11 +178,8 @@ jobs:
       # ── Build Unsigned Release ──
       - name: Build Unsigned Release APK
         if: steps.check-keystore.outputs.has_keystore != 'true'
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
         run: |
-          cd "$PROJECT_DIR"
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          gradle assembleRelease --no-daemon --stacktrace --info
 
       # ── Upload ──
       - name: Upload Signed Release APK
@@ -268,7 +187,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release-signed
-          path: ${{ steps.detect.outputs.project_dir }}/app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn
 
       - name: Upload Unsigned Release APK
@@ -276,5 +195,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release-unsigned
-          path: ${{ steps.detect.outputs.project_dir }}/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: warn

@@ -1,17 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AppPair</string>
-    <string name="notification_channel_id">apppair_service_channel</string>
-    <string name="notification_channel_name">AppPair Persistent Switcher</string>
-    <string name="notification_channel_desc">Keeps selected apps alive and powers the floating tab widget.</string>
-    
-    <!-- Permissions -->
-    <string name="perm_overlay_title">Display Over Other Apps</string>
-    <string name="perm_overlay_desc">Required to show the persistent floating dual-tab widget across all your apps.</string>
-    <string name="perm_packages_title">Query All Packages</string>
-    <string name="perm_packages_desc">Required to detect and list all installed apps on your device so you can pick your pair.</string>
-    <string name="perm_battery_title">Ignore Battery Optimization</string>
-    <string name="perm_battery_desc">Required to prevent the Android system from killing the AppPair background service and your paired apps.</string>
-    <string name="perm_notification_title">Post Notifications</string>
-    <string name="perm_notification_desc">Required on Android 13+ to keep the persistent foreground service running and provide quick controls.</string>
 </resources>

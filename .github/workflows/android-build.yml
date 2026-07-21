@@ -27,8 +27,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
+      # ✅ الإصلاح الجوهري: تحديد إصدار Gradle
+      - name: Setup Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
 
       - name: Install Android SDK
         env:
@@ -52,12 +55,26 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
+      - name: Show versions
+        run: |
+          echo "=== Java ==="
+          java -version
+          echo ""
+          echo "=== Gradle ==="
+          gradle --version
+          echo ""
+          echo "=== Project files ==="
+          find . -name "build.gradle*" -not -path "*/build/*" | sort
+          echo ""
+          echo "=== settings.gradle ==="
+          cat settings.gradle.kts || cat settings.gradle || echo "NOT FOUND"
+
       - name: Build Debug APK
         run: |
           if [ -x "./gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon --stacktrace --info
+            ./gradlew assembleDebug --no-daemon --stacktrace
           else
-            gradle assembleDebug --no-daemon --stacktrace --info
+            gradle assembleDebug --no-daemon --stacktrace
           fi
 
       - name: Upload Debug APK
@@ -86,8 +103,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
+      # ✅ نفس الإصدار
+      - name: Setup Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
 
       - name: Install Android SDK
         env:
@@ -137,13 +157,13 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -x "./gradlew" ]; then
-            ./gradlew assembleRelease --no-daemon --stacktrace --info \
+            ./gradlew assembleRelease --no-daemon --stacktrace \
               -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/keystore/release.jks" \
               -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
               -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
               -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
           else
-            gradle assembleRelease --no-daemon --stacktrace --info \
+            gradle assembleRelease --no-daemon --stacktrace \
               -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/keystore/release.jks" \
               -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
               -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
@@ -154,9 +174,9 @@ jobs:
         if: steps.check-keystore.outputs.has_keystore != 'true'
         run: |
           if [ -x "./gradlew" ]; then
-            ./gradlew assembleRelease --no-daemon --stacktrace --info
+            ./gradlew assembleRelease --no-daemon --stacktrace
           else
-            gradle assembleRelease --no-daemon --stacktrace --info
+            gradle assembleRelease --no-daemon --stacktrace
           fi
 
       - name: Upload Signed Release APK

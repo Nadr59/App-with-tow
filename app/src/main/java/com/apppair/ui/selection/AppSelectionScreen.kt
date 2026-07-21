@@ -1,483 +1,213 @@
 package com.apppair.ui.selection
 
-import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BatteryAlert
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.Badge
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.apppair.data.model.AppInfo
-import com.apppair.data.model.SelectedAppPair
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.apppair.data.repository.InstalledApp
+import com.apppair.ui.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppSelectionScreen(
-    onNavigateToOemGuide: () -> Unit,
-    viewModel: AppSelectionViewModel = hiltViewModel()
+    viewModel: MainViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
-    val apps by viewModel.filteredApps.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val selection by viewModel.selectedAppPair.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    var selectingSlot by remember { mutableIntStateOf(0) } // 0=none, 1=app1, 2=app2
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = "Pair Your Apps",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToOemGuide) {
-                        Icon(
-                            imageVector = Icons.Default.BatteryAlert,
-                            contentDescription = "OEM Battery Guide",
-                            tint = Color(0xFFF59E0B)
-                        )
-                    }
-                    IconButton(onClick = { viewModel.loadApps() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh Apps"
-                        )
-                    }
-                },
+                title = { Text("App Pair Switcher") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             )
-        },
-        bottomBar = {
-            if (selection.isReady) {
-                Surface(
-                    tonalElevation = 8.dp,
-                    shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        if (selection.isServiceActive) {
-                            Button(
-                                onClick = {
-                                    viewModel.stopSwitcherService(context)
-                                    Toast.makeText(context, "AppPair Switcher Stopped", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
-                            ) {
-                                Icon(Icons.Default.Stop, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Stop Persistent Switcher", fontWeight = FontWeight.Bold)
-                            }
-                        } else {
-                            Button(
-                                onClick = {
-                                    viewModel.startSwitcherService(context)
-                                    Toast.makeText(context, "AppPair Switcher Started!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Start Persistent Switcher", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
         }
-    ) { innerPadding ->
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(padding)
+                .padding(16.dp)
         ) {
-            // Selected Pair Banner
-            SelectedPairHeader(
-                selection = selection,
-                onClearA = { selection.appInfoA?.let { viewModel.onAppClicked(it) } },
-                onClearB = { selection.appInfoB?.let { viewModel.onAppClicked(it) } }
+            // ── عنوان الاختيار ──
+            Text(
+                text = "Select two apps to pair:",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
             )
-
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.updateSearchQuery(it) },
-                placeholder = { Text("Search installed apps by name or package...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.updateSearchQuery("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = null)
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(14.dp),
-                singleLine = true
-            )
-
-            // App List
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (apps.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No matching apps found.",
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(apps, key = { it.packageName }) { app ->
-                        AppListItem(
-                            app = app,
-                            onItemClick = { viewModel.onAppClicked(app) },
-                            onAssignA = { viewModel.selectAsSlotA(app) },
-                            onAssignB = { viewModel.selectAsSlotB(app) }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SelectedPairHeader(
-    selection: SelectedAppPair,
-    onClearA: () -> Unit,
-    onClearB: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Selected Pair (Tabs)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (selection.isServiceActive) {
-                    Badge(containerColor = Color(0xFF10B981)) {
-                        Text("ACTIVE", color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // ── بطاقتي التطبيقات المختارة ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Slot A Card
-                SelectedSlotCard(
-                    modifier = Modifier.weight(1f),
-                    slotLabel = "Tab 1 / App A",
-                    appInfo = selection.appInfoA,
-                    borderColor = Color(0xFF60A5FA),
-                    onClear = onClearA
+                AppSlotCard(
+                    label = "App 1",
+                    app = uiState.selectedApp1,
+                    isSelected = selectingSlot == 1,
+                    onClick = { selectingSlot = 1 },
+                    modifier = Modifier.weight(1f)
+                )
+                AppSlotCard(
+                    label = "App 2",
+                    app = uiState.selectedApp2,
+                    isSelected = selectingSlot == 2,
+                    onClick = { selectingSlot = 2 },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── قائمة التطبيقات ──
+            if (selectingSlot > 0) {
+                Text(
+                    text = "Tap an app to select it for Slot $selectingSlot:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                // Swap Icon
-                Box(
-                    modifier = Modifier.align(Alignment.CenterVertically)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwapHoriz,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (uiState.isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(uiState.installedApps) { app ->
+                            AppListItem(
+                                app = app,
+                                onClick = {
+                                    when (selectingSlot) {
+                                        1 -> viewModel.selectApp1(app)
+                                        2 -> viewModel.selectApp2(app)
+                                    }
+                                    selectingSlot = 0
+                                }
+                            )
+                        }
+                    }
                 }
-
-                // Slot B Card
-                SelectedSlotCard(
-                    modifier = Modifier.weight(1f),
-                    slotLabel = "Tab 2 / App B",
-                    appInfo = selection.appInfoB,
-                    borderColor = Color(0xFFF43F5E),
-                    onClear = onClearB
-                )
             }
         }
     }
 }
 
 @Composable
-private fun SelectedSlotCard(
-    modifier: Modifier = Modifier,
-    slotLabel: String,
-    appInfo: AppInfo?,
-    borderColor: Color,
-    onClear: () -> Unit
+fun AppSlotCard(
+    label: String,
+    app: InstalledApp?,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.height(78.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(1.5.dp, if (appInfo != null) borderColor else Color.Transparent)
+        modifier = modifier
+            .height(100.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp)
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            if (appInfo != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    appInfo.iconDrawable?.let { drawable ->
-                        Image(
-                            painter = rememberDrawablePainter(drawable),
-                            contentDescription = null,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = slotLabel,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = borderColor
-                        )
-                        Text(
-                            text = appInfo.label,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    IconButton(
-                        onClick = onClear,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
-                    }
+            if (app != null) {
+                app.icon?.let { drawable ->
+                    Image(
+                        bitmap = drawable.toBitmap(48, 48).asImageBitmap(),
+                        contentDescription = app.name,
+                        modifier = Modifier.size(40.dp)
+                    )
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = app.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
             } else {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Text(
-                        text = slotLabel,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                    Text(
-                        text = "Tap an app below",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    )
-                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Tap to select",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AppListItem(
-    app: AppInfo,
-    onItemClick: () -> Unit,
-    onAssignA: () -> Unit,
-    onAssignB: () -> Unit
+fun AppListItem(
+    app: InstalledApp,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onItemClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                app.isSelectedAsA -> Color(0xFF60A5FA).copy(alpha = 0.15f)
-                app.isSelectedAsB -> Color(0xFFF43F5E).copy(alpha = 0.15f)
-                else -> MaterialTheme.colorScheme.surface
-            }
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(14.dp),
-        border = when {
-            app.isSelectedAsA -> androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF60A5FA))
-            app.isSelectedAsB -> androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFF43F5E))
-            else -> null
-        }
+            .clickable { onClick() },
+        shape = RoundedCornerShape(8.dp)
     ) {
         Row(
             modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            app.iconDrawable?.let { drawable ->
+            app.icon?.let { drawable ->
                 Image(
-                    painter = rememberDrawablePainter(drawable),
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp)
-                )
-            } ?: Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.Gray, CircleShape)
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = app.label,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (app.isSystemApp) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Badge(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
-                            Text("SYS", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                Text(
-                    text = app.packageName,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    bitmap = drawable.toBitmap(40, 40).asImageBitmap(),
+                    contentDescription = app.name,
+                    modifier = Modifier.size(36.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Quick action buttons [Set A] and [Set B]
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Surface(
-                    onClick = onAssignA,
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (app.isSelectedAsA) Color(0xFF60A5FA) else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp)) {
-                        Text(
-                            text = if (app.isSelectedAsA) "Tab A ✓" else "Set A",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (app.isSelectedAsA) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Surface(
-                    onClick = onAssignB,
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (app.isSelectedAsB) Color(0xFFF43F5E) else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp)) {
-                        Text(
-                            text = if (app.isSelectedAsB) "Tab B ✓" else "Set B",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (app.isSelectedAsB) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = app.name,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

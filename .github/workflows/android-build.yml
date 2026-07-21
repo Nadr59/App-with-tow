@@ -8,11 +8,6 @@ on:
     branches:
       - main
 
-env:
-  ANDROID_HOME: ${{ runner.temp }}/android-sdk
-  CMDLINE_TOOLS_VERSION: "11076708"
-  GRADLE_VERSION: "8.7"
-
 jobs:
   # ══════════════════════════════════════════════
   # Job 1: Build Debug APK
@@ -21,12 +16,16 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
 
+    env:
+      CMDLINE_TOOLS_VERSION: "11076708"
+      GRADLE_VERSION: "8.7"
+
     steps:
       # ── 1. Checkout ──
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. JDK ──
+      # ── 2. JDK 17 ──
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         id: setup-java
@@ -34,103 +33,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ── 3. تشخيص: افحص بنية المشروع ──
-      - name: Diagnose project structure
-        run: |
-          echo "============================================"
-          echo "  Repository root contents:"
-          echo "============================================"
-          ls -la
-          echo ""
-          echo "============================================"
-          echo "  Looking for gradlew anywhere:"
-          echo "============================================"
-          find . -name "gradlew" -type f 2>/dev/null || echo "No gradlew found"
-          echo ""
-          echo "============================================"
-          echo "  Looking for build.gradle files:"
-          echo "============================================"
-          find . -name "build.gradle*" -type f 2>/dev/null || echo "No build.gradle found"
-          echo ""
-          echo "============================================"
-          echo "  Looking for settings.gradle:"
-          echo "============================================"
-          find . -name "settings.gradle*" -type f 2>/dev/null || echo "No settings.gradle found"
-          echo ""
-
-      # ── 4. تحديد مسار المشروع ──
-      - name: Detect project directory
-        id: detect
-        run: |
-          # ابحث عن build.gradle أو settings.gradle
-          PROJECT_DIR=""
-
-          if [ -f "./settings.gradle.kts" ] || [ -f "./settings.gradle" ]; then
-            PROJECT_DIR="."
-          elif [ -f "./app/build.gradle.kts" ] || [ -f "./app/build.gradle" ]; then
-            PROJECT_DIR="."
-          else
-            # ابحث في المجلدات الفرعية
-            FOUND=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -1)
-            if [ -n "$FOUND" ]; then
-              PROJECT_DIR=$(dirname "$FOUND")
-            fi
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "::error::Could not find Android project in repository!"
-            echo "Make sure settings.gradle.kts or build.gradle.kts exists."
-            exit 1
-          fi
-
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo ">>> Detected project directory: $PROJECT_DIR"
-
-      # ── 5. إنشاء Gradle Wrapper إذا لم يكن موجوداً ──
-      - name: Setup Gradle Wrapper
-        id: gradle-setup
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ -f "./gradlew" ]; then
-            echo ">>> gradlew found in $PROJECT_DIR"
-            echo "gradlew_path=./gradlew" >> "$GITHUB_OUTPUT"
-          else
-            echo ">>> gradlew NOT found — generating with Gradle action..."
-            echo "gradlew_path=GENERATED" >> "$GITHUB_OUTPUT"
-          fi
-
-      # ── 6. تثبيت Gradle وتوليد Wrapper إن لزم ──
-      - name: Install Gradle & Generate Wrapper
-        if: steps.gradle-setup.outputs.gradlew_path == 'GENERATED'
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
-
-      - name: Generate missing Gradle Wrapper
-        if: steps.gradle-setup.outputs.gradlew_path == 'GENERATED'
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          cd "$PROJECT_DIR"
-          gradle wrapper --gradle-version ${{ env.GRADLE_VERSION }}
-          echo ">>> Wrapper generated:"
-          ls -la gradlew gradle/wrapper/
-
-      # ── 7. جعل gradlew قابل للتنفيذ ──
-      - name: Make gradlew executable
-        env:
-          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          cd "$PROJECT_DIR"
-          chmod +x ./gradlew
-          echo ">>> gradlew is now executable"
-          ./gradlew --version
-
-      # ── 8. Cache Gradle ──
-      - name: Cache Gradle packages
+      # ── 3. Cache Gradle ──
+      - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
@@ -140,41 +44,79 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ── 9. تثبيت Android SDK ──
+      # ── 4. Install Android SDK ──
       - name: Install Android SDK
         env:
           JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
-          echo ">>> Setting up Android SDK at $ANDROID_HOME"
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          echo ">>> Installing Android SDK at $ANDROID_SDK_ROOT"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
 
-          wget -q --show-progress \
-            "https://dl.google.com/android/repository/commandlinetools-linux-${{ env.CMDLINE_TOOLS_VERSION }}_latest.zip" \
+          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" \
             -O /tmp/cmdline-tools.zip
 
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-tmp
-          mv /tmp/cmdline-tools-tmp/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+          mv /tmp/cmdline-tools-tmp/cmdline-tools "$ANDROID_SDK_ROOT/cmdline-tools/latest"
           rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools-tmp
 
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$ANDROID_HOME" --licenses > /dev/null 2>&1 || true
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_SDK_ROOT" --licenses > /dev/null 2>&1 || true
 
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$ANDROID_HOME" \
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      # ── 10. إنشاء local.properties ──
-      - name: Create local.properties
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+
+      # ── 5. Detect project & create local.properties ──
+      - name: Detect project and create local.properties
+        id: detect
+        run: |
+          echo ">>> Searching for project structure..."
+          find . -name "settings.gradle*" -type f
+          find . -name "build.gradle*" -type f
+          find . -name "gradlew" -type f
+
+          PROJECT_DIR="."
+          if [ -f "./settings.gradle.kts" ] || [ -f "./settings.gradle" ]; then
+            PROJECT_DIR="."
+          else
+            FOUND=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -1)
+            if [ -n "$FOUND" ]; then
+              PROJECT_DIR=$(dirname "$FOUND")
+            fi
+          fi
+
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo ">>> Project directory: $PROJECT_DIR"
+
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$PROJECT_DIR/local.properties"
+          echo ">>> local.properties created:"
+          cat "$PROJECT_DIR/local.properties"
+
+      # ── 6. Setup Gradle Wrapper ──
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Ensure Gradle Wrapper exists
         env:
           PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
         run: |
-          echo "sdk.dir=$ANDROID_HOME" > "$PROJECT_DIR/local.properties"
-          echo ">>> Created local.properties in $PROJECT_DIR:"
-          cat "$PROJECT_DIR/local.properties"
+          cd "$PROJECT_DIR"
+          if [ ! -f "./gradlew" ]; then
+            echo ">>> gradlew not found — generating..."
+            gradle wrapper --gradle-version $GRADLE_VERSION
+          fi
+          chmod +x ./gradlew
+          echo ">>> Gradle version:"
+          ./gradlew --version
 
-      # ── 11. بناء Debug APK ──
+      # ── 7. Build Debug APK ──
       - name: Build Debug APK
         env:
           PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
@@ -182,7 +124,7 @@ jobs:
           cd "$PROJECT_DIR"
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      # ── 12. رفع الـ APK ──
+      # ── 8. Upload ──
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -198,6 +140,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-debug
 
+    env:
+      CMDLINE_TOOLS_VERSION: "11076708"
+      GRADLE_VERSION: "8.7"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -209,7 +155,35 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Detect project directory
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install Android SDK
+        env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+        run: |
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" \
+            -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-tmp
+          mv /tmp/cmdline-tools-tmp/cmdline-tools "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools-tmp
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_SDK_ROOT" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_SDK_ROOT" \
+            "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Detect project and create local.properties
         id: detect
         run: |
           PROJECT_DIR="."
@@ -222,67 +196,85 @@ jobs:
             fi
           fi
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$PROJECT_DIR/local.properties"
 
-      - name: Setup Gradle Wrapper
-        run: |
-          cd "${{ steps.detect.outputs.project_dir }}"
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version ${{ env.GRADLE_VERSION }}
-          fi
-          chmod +x ./gradlew
-
-      - name: Install Gradle (if needed)
-        if: success()
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: Install Android SDK
+      - name: Ensure Gradle Wrapper exists
         env:
-          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
         run: |
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-${{ env.CMDLINE_TOOLS_VERSION }}_latest.zip" -O /tmp/cmd.zip
-          unzip -q /tmp/cmd.zip -d /tmp/cmd-tmp
-          mv /tmp/cmd-tmp/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
-          rm -rf /tmp/cmd.zip /tmp/cmd-tmp
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses > /dev/null 2>&1 || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
-            "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          cd "$PROJECT_DIR"
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version $GRADLE_VERSION
+          fi
+          chmod +x ./gradlew
 
-      - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > ${{ steps.detect.outputs.project_dir }}/local.properties
+      # ── Check if keystore secret exists ──
+      - name: Check for signing keystore
+        id: check-keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+            echo ">>> Keystore secret found"
+          else
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+            echo ">>> No keystore secret — will build unsigned"
+          fi
 
-      # ── التوقيع ──
-      - name: Decode keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      # ── Decode keystore ──
+      - name: Decode keystore from secrets
+        if: steps.check-keystore.outputs.has_keystore == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           mkdir -p keystore
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/release.jks
+          echo "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
+          echo ">>> Keystore decoded, size: $(wc -c < keystore/release.jks) bytes"
 
+      # ── Build Signed Release ──
       - name: Build Signed Release APK
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: steps.check-keystore.outputs.has_keystore == 'true'
         env:
+          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          cd ${{ steps.detect.outputs.project_dir }}
+          cd "$PROJECT_DIR"
           ./gradlew assembleRelease --no-daemon --stacktrace \
-            -Pandroid.injected.signing.store.file=../keystore/release.jks \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/keystore/release.jks" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
+      # ── Build Unsigned Release ──
       - name: Build Unsigned Release APK
-        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
+        if: steps.check-keystore.outputs.has_keystore != 'true'
+        env:
+          PROJECT_DIR: ${{ steps.detect.outputs.project_dir }}
         run: |
-          cd ${{ steps.detect.outputs.project_dir }}
+          cd "$PROJECT_DIR"
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Upload Release APK
+      # ── Upload ──
+      - name: Upload Signed Release APK
+        if: steps.check-keystore.outputs.has_keystore == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: ${{ steps.detect.outputs.project_dir }}/app/build/outputs/apk/release/app-release*.apk
+          name: app-release-signed
+          path: ${{ steps.detect.outputs.project_dir }}/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+
+      - name: Upload Unsigned Release APK
+        if: steps.check-keystore.outputs.has_keystore != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned
+          path: ${{ steps.detect.outputs.project_dir }}/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: warn

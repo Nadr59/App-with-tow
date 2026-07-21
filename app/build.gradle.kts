@@ -40,7 +40,6 @@ android {
         compose = true
     }
 
-    // ✅ هذا هو المكان الصحيح لإعداد Compose Compiler
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
@@ -63,6 +62,11 @@ dependencies {
     // ── Core ──
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+
+    // ══════════════════════════════════════════
+    // ✅ أضف هذا السطر — يوفّر XML themes
+    // ══════════════════════════════════════════
+    implementation("com.google.android.material:material:1.11.0")
 
     // ── Hilt ──
     implementation("com.google.dagger:hilt-android:2.50")

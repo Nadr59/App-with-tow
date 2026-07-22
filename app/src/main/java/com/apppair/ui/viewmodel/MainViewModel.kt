@@ -1,7 +1,9 @@
-package com.apppair.ui.viewmodel
+package com.apppair.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.apppair.data.model.PermissionStatus
+import com.apppair.data.model.SelectedAppPair
 import com.apppair.data.repository.AppRepository
 import com.apppair.data.repository.InstalledApp
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +19,7 @@ data class AppPairUiState(
     val selectedApp1: InstalledApp? = null,
     val selectedApp2: InstalledApp? = null,
     val isServiceRunning: Boolean = false,
+    val permissions: PermissionStatus = PermissionStatus(),
     val error: String? = null
 )
 
@@ -29,10 +32,12 @@ class MainViewModel @Inject constructor(
     val uiState: StateFlow<AppPairUiState> = _uiState.asStateFlow()
 
     init {
-        loadInstalledApps()
+        loadApps()
+        observeServiceState()
+        checkPermissions()
     }
 
-    private fun loadInstalledApps() {
+    private fun loadApps() {
         viewModelScope.launch {
             try {
                 val apps = repository.getInstalledApps()
@@ -50,23 +55,36 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    private fun observeServiceState() {
+        viewModelScope.launch {
+            repository.serviceActive.collect { active ->
+                _uiState.value = _uiState.value.copy(isServiceRunning = active)
+            }
+        }
+    }
+
+    fun checkPermissions() {
+        val status = repository.checkPermissions()
+        _uiState.value = _uiState.value.copy(permissions = status)
+    }
+
     fun selectApp1(app: InstalledApp) {
         _uiState.value = _uiState.value.copy(selectedApp1 = app)
-        checkAndSave()
+        saveIfComplete()
     }
 
     fun selectApp2(app: InstalledApp) {
         _uiState.value = _uiState.value.copy(selectedApp2 = app)
-        checkAndSave()
+        saveIfComplete()
     }
 
-    private fun checkAndSave() {
-        val state = _uiState.value
-        if (state.selectedApp1 != null && state.selectedApp2 != null) {
+    private fun saveIfComplete() {
+        val s = _uiState.value
+        if (s.selectedApp1 != null && s.selectedApp2 != null) {
             viewModelScope.launch {
-                repository.saveSelection(
-                    state.selectedApp1.packageName,
-                    state.selectedApp2.packageName
+                repository.saveSelectedApps(
+                    s.selectedApp1!!.packageName,
+                    s.selectedApp2!!.packageName
                 )
             }
         }
@@ -82,7 +100,9 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun setServiceRunning(running: Boolean) {
-        _uiState.value = _uiState.value.copy(isServiceRunning = running)
+    fun setServiceRunning(active: Boolean) {
+        viewModelScope.launch {
+            repository.setServiceActive(active)
+        }
     }
 }

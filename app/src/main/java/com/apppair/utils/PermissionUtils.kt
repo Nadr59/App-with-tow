@@ -12,20 +12,20 @@ object PermissionUtils {
     fun checkPermissions(context: Context): PermissionStatus {
         val overlay = Settings.canDrawOverlays(context)
 
-        val notifications = if (Build.VERSION.SDK_INT >= 33) {
+        val notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.areNotificationsEnabled
+            nm.areNotificationsEnabled() // ← استدعاء كدالة
         } else {
             true
         }
 
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val batteryOk = pm.isIgnoringBatteryOptimizations(context.packageName)
+        val batteryIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
 
         return PermissionStatus(
-            overlayGranted = overlay,
-            notificationsGranted = notifications,
-            batteryOptimized = batteryOk
+            hasOverlayPermission = overlay,
+            hasNotificationPermission = notifications,
+            hasBatteryOptimizationIgnored = batteryIgnored
         )
     }
 }

@@ -7,16 +7,15 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
+import com.apppair.R
 import com.apppair.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -39,7 +38,7 @@ class OverlayService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -68,8 +67,7 @@ class OverlayService : LifecycleService() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -77,83 +75,56 @@ class OverlayService : LifecycleService() {
             y = 200
         }
 
-        // ── إنشاء الزر العائم ──
         overlayView = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xE61A1A1A.toInt())
-            setPadding(24, 16, 24, 16)
-            elevation = 12f
+            setPadding(32, 20, 32, 20)
         }
 
-        // ── زر التطبيق الأول ──
         val btn1 = TextView(this).apply {
             text = "App 1"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 14f
-            setPadding(24, 8, 24, 8)
-            setOnClickListener {
-                switchToApp(app1Package)
-            }
+            textSize = 15f
+            setOnClickListener { switchTo(app1Package) }
         }
 
-        // ── فاصل ──
         val divider = TextView(this).apply {
-            text = " │ "
-            setTextColor(0xFF666666.toInt())
-            textSize = 14f
-            setPadding(8, 8, 8, 8)
+            text = "  |  "
+            setTextColor(0xFF888888.toInt())
+            textSize = 15f
         }
 
-        // ── زر التطبيق الثاني ──
         val btn2 = TextView(this).apply {
             text = "App 2"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 14f
-            setPadding(24, 8, 24, 8)
-            setOnClickListener {
-                switchToApp(app2Package)
-            }
+            textSize = 15f
+            setOnClickListener { switchTo(app2Package) }
         }
 
         overlayView?.addView(btn1)
         overlayView?.addView(divider)
         overlayView?.addView(btn2)
 
-        // ── جعل الزر قابل للسحب ──
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var isDragging = false
+        var initX = 0
+        var initY = 0
+        var initTouchX = 0f
+        var initTouchY = 0f
 
         overlayView?.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    isDragging = false
+                    initX = params.x
+                    initY = params.y
+                    initTouchX = event.rawX
+                    initTouchY = event.rawY
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    if (dx * dx + dy * dy > 100) {
-                        isDragging = true
-                    }
-                    params.x = initialX - dx.toInt()
-                    params.y = initialY + dy.toInt()
+                    params.x = initX - (event.rawX - initTouchX).toInt()
+                    params.y = initY + (event.rawY - initTouchY).toInt()
                     try {
                         windowManager?.updateViewLayout(overlayView, params)
                     } catch (_: Exception) {}
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (!isDragging) {
-                        // النقر العادي — لا نفعل شيئاً
-                        // (كل زر له setOnClickListener خاص)
-                    }
                     true
                 }
                 else -> false
@@ -167,42 +138,25 @@ class OverlayService : LifecycleService() {
         }
     }
 
-    private fun switchToApp(packageName: String?) {
+    private fun switchTo(packageName: String?) {
         packageName ?: return
-
         try {
-            val pm = packageManager
-            val intent = pm.getLaunchIntentForPackage(packageName)
-            if (intent != null) {
-                intent.addFlags(
+            val launch = packageManager.getLaunchIntentForPackage(packageName)
+            if (launch != null) {
+                launch.addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                 )
-                startActivity(intent)
-            } else {
-                // التطبيق غير مثبت — أشعار بسيط
-                val nm = getSystemService(NotificationManager::class.java)
-                val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("App not found")
-                    .setContentText("$packageName is not installed")
-                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                    .setAutoCancel(true)
-                    .build()
-                nm.notify(2001, notif)
+                startActivity(launch)
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (_: Exception) {}
     }
 
     private fun removeOverlay() {
         overlayView?.let {
             try {
                 windowManager?.removeView(it)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (_: Exception) {}
         }
         overlayView = null
     }
@@ -210,22 +164,21 @@ class OverlayService : LifecycleService() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "App Pair Overlay",
+            getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Keeps the app pair switcher running"
+            description = getString(R.string.notification_channel_desc)
         }
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(channel)
     }
 
-    private fun createNotification(): Notification {
+    private fun buildNotification(): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
-
         val stopIntent = PendingIntent.getService(
             this, 0,
             Intent(this, OverlayService::class.java).apply {
@@ -233,10 +186,9 @@ class OverlayService : LifecycleService() {
             },
             PendingIntent.FLAG_IMMUTABLE
         )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("App Pair Active")
-            .setContentText("Tap to manage or stop")
+            .setContentTitle(getString(R.string.notification_channel_name))
+            .setContentText("Tap to manage")
             .setSmallIcon(android.R.drawable.ic_menu_swap)
             .setContentIntent(openIntent)
             .addAction(android.R.drawable.ic_delete, "Stop", stopIntent)

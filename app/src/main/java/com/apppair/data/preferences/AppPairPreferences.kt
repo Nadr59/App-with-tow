@@ -6,7 +6,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +13,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// DataStore extension على مستوى الملف
 private val Context.dataStore: DataStore<Preferences>
         by preferencesDataStore(name = "app_pair_prefs")
 
@@ -22,53 +20,38 @@ private val Context.dataStore: DataStore<Preferences>
 class AppPairPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-
     companion object {
-        private val APP1_PACKAGE = stringPreferencesKey("app1_package")
-        private val APP2_PACKAGE = stringPreferencesKey("app2_package")
-        private val SAVED_TASK_IDS = stringSetPreferencesKey("saved_task_ids")
-        private val SERVICE_ACTIVE = booleanPreferencesKey("service_active")
+        val KEY_APP1 = stringPreferencesKey("app1_package")
+        val KEY_APP2 = stringPreferencesKey("app2_package")
+        val KEY_SERVICE_ACTIVE = booleanPreferencesKey("service_active")
     }
 
-    // ── حفظ التطبيقات المختارة ──
-    val app1Package: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[APP1_PACKAGE]
+    val app1Package: Flow<String?> = context.dataStore.data.map { it[KEY_APP1] }
+
+    val app2Package: Flow<String?> = context.dataStore.data.map { it[KEY_APP2] }
+
+    val serviceActive: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_SERVICE_ACTIVE] ?: false
     }
 
-    val app2Package: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[APP2_PACKAGE]
-    }
-
-    val serviceActive: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[SERVICE_ACTIVE] ?: false
-    }
-
-    suspend fun saveSelectedApps(package1: String, package2: String) {
+    suspend fun saveSelectedApps(pkgA: String, pkgB: String) {
         context.dataStore.edit { prefs ->
-            prefs[APP1_PACKAGE] = package1
-            prefs[APP2_PACKAGE] = package2
+            prefs[KEY_APP1] = pkgA
+            prefs[KEY_APP2] = pkgB
         }
     }
 
     suspend fun setServiceActive(active: Boolean) {
         context.dataStore.edit { prefs ->
-            prefs[SERVICE_ACTIVE] = active
+            prefs[KEY_SERVICE_ACTIVE] = active
         }
     }
 
-    suspend fun saveTaskId(packageName: String, taskId: Int) {
+    suspend fun clear() {
         context.dataStore.edit { prefs ->
-            val current = prefs[SAVED_TASK_IDS]?.toMutableSet() ?: mutableSetOf()
-            current.add("$packageName:$taskId")
-            prefs[SAVED_TASK_IDS] = current
-        }
-    }
-
-    suspend fun clearSelection() {
-        context.dataStore.edit { prefs ->
-            prefs.remove(APP1_PACKAGE)
-            prefs.remove(APP2_PACKAGE)
-            prefs.remove(SAVED_TASK_IDS)
+            prefs.remove(KEY_APP1)
+            prefs.remove(KEY_APP2)
+            prefs.remove(KEY_SERVICE_ACTIVE)
         }
     }
 }

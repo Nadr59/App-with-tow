@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AppPair</string>
+    <string name="notification_channel_name">App Pair Service</string>
+    <string name="notification_channel_desc">Keeps the app pair switcher running</string>
+    <string name="perm_overlay_title">Overlay permission</string>
+    <string name="perm_overlay_desc">Required to show the floating switcher</string>
+    <string name="perm_battery_title">Battery optimization</string>
+    <string name="perm_battery_desc">Allow AppPair to run in background</string>
+    <string name="perm_notification_title">Notifications permission</string>
+    <string name="perm_notification_desc">Required for service notifications</string>
 </resources>

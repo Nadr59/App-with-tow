@@ -23,18 +23,77 @@ data class AppPairUiState(
 )
 
 @HiltViewModel
-class MainViewModel @Inject constructor(private val repository: AppRepository) : ViewModel() {
+class MainViewModel @Inject constructor(
+    private val repository: AppRepository
+) : ViewModel() {
+
     private val _uiState = MutableStateFlow(AppPairUiState())
     val uiState: StateFlow<AppPairUiState> = _uiState.asStateFlow()
 
-    init { try { loadApps(); observeServiceState(); refreshPermissions() } catch (e: Exception) { _uiState.value = _uiState.value.copy(isLoading = false, error = e.message) } }
+    init {
+        loadApps()
+        observeServiceState()
+        refreshPermissions()
+    }
 
-    private fun loadApps() { viewModelScope.launch { try { _uiState.value = _uiState.value.copy(isLoading = false, installedApps = repository.getInstalledApps()) } catch (e: Exception) { _uiState.value = _uiState.value.copy(isLoading = false, error = e.message) } } }
-    private fun observeServiceState() { viewModelScope.launch { try { repository.serviceActive.collect { _uiState.value = _uiState.value.copy(isServiceRunning = it) } } catch (_: Exception) {} } }
-    fun refreshPermissions() { try { _uiState.value = _uiState.value.copy(permissions = repository.checkPermissions()) } catch (_: Exception) {} }
-    fun selectApp1(app: InstalledApp) { _uiState.value = _uiState.value.copy(selectedApp1 = app); saveIfComplete() }
-    fun selectApp2(app: InstalledApp) { _uiState.value = _uiState.value.copy(selectedApp2 = app); saveIfComplete() }
-    private fun saveIfComplete() { val s = _uiState.value; if (s.selectedApp1 != null && s.selectedApp2 != null) { viewModelScope.launch { try { repository.saveSelectedApps(s.selectedApp1!!.packageName, s.selectedApp2!!.packageName) } catch (_: Exception) {} } } }
-    fun clearSelection() { _uiState.value = _uiState.value.copy(selectedApp1 = null, selectedApp2 = null); viewModelScope.launch { try { repository.clearSelection() } catch (_: Exception) {} } }
-    fun setServiceRunning(active: Boolean) { viewModelScope.launch { try { repository.setServiceActive(active) } catch (_: Exception) {} } }
+    private fun loadApps() {
+        viewModelScope.launch {
+            val apps = repository.getInstalledApps()
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                installedApps = apps
+            )
+        }
+    }
+
+    private fun observeServiceState() {
+        viewModelScope.launch {
+            repository.serviceActive.collect { active ->
+                _uiState.value = _uiState.value.copy(isServiceRunning = active)
+            }
+        }
+    }
+
+    fun refreshPermissions() {
+        val status = repository.checkPermissions()
+        _uiState.value = _uiState.value.copy(permissions = status)
+    }
+
+    fun selectApp1(app: InstalledApp) {
+        _uiState.value = _uiState.value.copy(selectedApp1 = app)
+        saveIfComplete()
+    }
+
+    fun selectApp2(app: InstalledApp) {
+        _uiState.value = _uiState.value.copy(selectedApp2 = app)
+        saveIfComplete()
+    }
+
+    private fun saveIfComplete() {
+        val s = _uiState.value
+        if (s.selectedApp1 != null && s.selectedApp2 != null) {
+            viewModelScope.launch {
+                repository.saveSelectedApps(
+                    s.selectedApp1!!.packageName,
+                    s.selectedApp2!!.packageName
+                )
+            }
+        }
+    }
+
+    fun clearSelection() {
+        _uiState.value = _uiState.value.copy(
+            selectedApp1 = null,
+            selectedApp2 = null
+        )
+        viewModelScope.launch {
+            repository.clearSelection()
+        }
+    }
+
+    fun setServiceRunning(active: Boolean) {
+        viewModelScope.launch {
+            repository.setServiceActive(active)
+        }
+    }
 }

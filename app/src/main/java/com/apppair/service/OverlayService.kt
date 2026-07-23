@@ -1,5 +1,6 @@
 package com.apppair.service
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -35,6 +38,20 @@ class OverlayService : LifecycleService() {
     private var app1Package: String? = null
     private var app2Package: String? = null
 
+    // ═══ تتبع المهام ═══
+    private var lastLaunchedPackage: String? = null
+    private val handler = Handler(Looper.getMainLooper())
+
+    // ═══ مراقبة حية ═══
+    private val watchdog = object : Runnable {
+        override fun run() {
+            try {
+                checkAppsAlive()
+            } catch (_: Exception) {}
+            handler.postDelayed(this, 5000)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -46,6 +63,7 @@ class OverlayService : LifecycleService() {
 
         if (intent?.action == ACTION_STOP) {
             removeOverlay()
+            handler.removeCallbacks(watchdog)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -55,47 +73,139 @@ class OverlayService : LifecycleService() {
 
         if (overlayView == null && app1Package != null && app2Package != null) {
             showOverlay()
+            handler.post(watchdog)
         }
 
         return START_STICKY
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // التبديل WITHOUT إعادة تحميل
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
+    // التبديل الذكي: يكتشف إذا التطبيق قُتل ويُعيد تشغيله
+    // ═══════════════════════════════════════════════════════
     private fun switchToApp(packageName: String?) {
         packageName ?: return
 
         try {
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val isRunning = isAppInForeground(am, packageName)
 
-            if (launchIntent != null) {
-                // ═══════════════════════════════════════════════
-                // هذه الـ flags تمنع إعادة التحميل:
-                //
-                // REORDER_TO_FRONT: يُعيد المهمة الموجودة للأمام
-                //                  بدون إنشاء نشاط جديد
-                //
-                // SINGLE_TOP: إذا النشاط موجود بالأعلى
-                //            يستدعي onNewIntent بدل إنشاء جديد
-                //
-                // NEW_TASK: مطلوب لأننا نفتح من Service
-                // ═══════════════════════════════════════════════
-                launchIntent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
-
-                startActivity(launchIntent)
+            if (isRunning) {
+                // ═══ التطبيق يعمل: أعد للأمام بدون إعادة تحميل ═══
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                    startActivity(launchIntent)
+                }
+            } else {
+                // ═══ التطبيق قُتل: افتحه مع حماية من الإغلاق ═══
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                    )
+                    startActivity(launchIntent)
+                }
             }
+
+            lastLaunchedPackage = packageName
+
         } catch (e: Exception) {
             e.printStackTrace()
+            // ═══ خطة بديلة ═══
+            try {
+                val fallback = packageManager.getLaunchIntentForPackage(packageName)
+                fallback?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (fallback != null) startActivity(fallback)
+            } catch (_: Exception) {}
         }
     }
 
+    // ═══════════════════════════════════════════════════════
+    // فحص: هل التطبيق يعمل في المهام؟
+    // ═══════════════════════════════════════════════════════
+    private fun isAppInForeground(am: ActivityManager, packageName: String): Boolean {
+        try {
+            // الطريقة 1: من الأنشطة الجارية
+            val tasks = am.appTasks
+            for (task in tasks) {
+                val info = task.taskInfo
+                if (info.topActivity?.packageName == packageName ||
+                    info.baseActivity?.packageName == packageName
+                ) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            // الطريقة 2: من العمليات الجارية
+            @Suppress("DEPRECATION")
+            val processes = am.runningAppProcesses
+            if (processes != null) {
+                for (proc in processes) {
+                    if (proc.processName == packageName ||
+                        proc.processName.startsWith("$packageName:")
+                    ) {
+                        if (proc.importance <=
+                            android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE
+                        ) {
+                            return true
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return false
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // مراقب: يفحص التطبيقات المختارة كل 5 ثوانٍ
+    // ═══════════════════════════════════════════════════════
+    private fun checkAppsAlive() {
+        val pkg1 = app1Package ?: return
+        val pkg2 = app2Package ?: return
+
+        // تحقق من أن كلا التطبيقين مثبتان
+        val app1Installed = isAppInstalled(pkg1)
+        val app2Installed = isAppInstalled(pkg2)
+
+        if (!app1Installed || !app2Installed) {
+            // أحد التطبيقات حُذف — أرسل إشعار
+            sendAlertNotification("One of your selected apps was uninstalled!")
+        }
+    }
+
+    private fun isAppInstalled(packageName: String): Boolean {
+        return try {
+            packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun sendAlertNotification(message: String) {
+        try {
+            val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("AppPair Alert")
+                .setContentText(message)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setAutoCancel(true)
+                .build()
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(2002, notif)
+        } catch (_: Exception) {}
+    }
+
     // ═══════════════════════════════════════════
-    // إنشاء الزر العائم
+    // واجهة المستخدم
     // ═══════════════════════════════════════════
     private fun showOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -222,6 +332,7 @@ class OverlayService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(watchdog)
         removeOverlay()
         super.onDestroy()
     }

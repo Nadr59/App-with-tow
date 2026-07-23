@@ -1,6 +1,5 @@
 package com.apppair.service
 
-import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -36,12 +35,6 @@ class OverlayService : LifecycleService() {
     private var app1Package: String? = null
     private var app2Package: String? = null
 
-    // ═══════════════════════════════════════════
-    // تتبع معرّفات المهام (Task IDs)
-    // ═══════════════════════════════════════════
-    private var app1TaskId: Int = -1
-    private var app2TaskId: Int = -1
-
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -67,93 +60,37 @@ class OverlayService : LifecycleService() {
         return START_STICKY
     }
 
-    // ═══════════════════════════════════════════
-    // التبديل بين التطبيقات (الحل الجوهري)
-    // ═══════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // التبديل WITHOUT إعادة تحميل
+    // ═══════════════════════════════════════════════════════════
     private fun switchToApp(packageName: String?) {
         packageName ?: return
 
         try {
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
 
-            // ── الخطوة 1: ابحث عن المهمة الحالية للتطبيق ──
-            val taskId = findTaskId(am, packageName)
+            if (launchIntent != null) {
+                // ═══════════════════════════════════════════════
+                // هذه الـ flags تمنع إعادة التحميل:
+                //
+                // REORDER_TO_FRONT: يُعيد المهمة الموجودة للأمام
+                //                  بدون إنشاء نشاط جديد
+                //
+                // SINGLE_TOP: إذا النشاط موجود بالأعلى
+                //            يستدعي onNewIntent بدل إنشاء جديد
+                //
+                // NEW_TASK: مطلوب لأننا نفتح من Service
+                // ═══════════════════════════════════════════════
+                launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
 
-            if (taskId != -1) {
-                // ── التطبيق يعمل بالفعل → أعد للأمام بدون إعادة تحميل ──
-                am.moveTaskToFront(taskId, ActivityManager.MOVE_TASK_WITH_HOME)
-                saveTaskId(packageName, taskId)
-            } else {
-                // ── التطبيق غير موجود في المهام → افتحه لأول مرة ──
-                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                    )
-                    startActivity(launchIntent)
-
-                    // انتظر قليلاً ثم خزّن معرّف المهمة
-                    android.os.Handler(mainLooper).postDelayed({
-                        val newTaskId = findTaskId(am, packageName)
-                        saveTaskId(packageName, newTaskId)
-                    }, 500)
-                }
+                startActivity(launchIntent)
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            // ── خطة بديلة: فتح عادي ──
-            try {
-                val fallback = packageManager.getLaunchIntentForPackage(packageName)
-                if (fallback != null) {
-                    fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(fallback)
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    // ═══════════════════════════════════════════
-    // البحث عن معرّف المهمة للتطبيق
-    // ═══════════════════════════════════════════
-    private fun findTaskId(am: ActivityManager, packageName: String): Int {
-        // ── الطريقة 1: من getRunningTasks ──
-        try {
-            @Suppress("DEPRECATION")
-            val tasks = am.getRunningTasks(50)
-            for (task in tasks) {
-                if (task.baseActivity?.packageName == packageName ||
-                    task.topActivity?.packageName == packageName
-                ) {
-                    return task.taskId
-                }
-            }
-        } catch (_: Exception) {}
-
-        // ── الطريقة 2: من appTasks (Android 5.0+) ──
-        try {
-            val appTasks = am.appTasks
-            for (appTask in appTasks) {
-                val taskInfo = appTask.taskInfo
-                if (taskInfo.baseActivity?.packageName == packageName ||
-                    taskInfo.topActivity?.packageName == packageName
-                ) {
-                    return taskInfo.taskId
-                }
-            }
-        } catch (_: Exception) {}
-
-        return -1
-    }
-
-    // ═══════════════════════════════════════════
-    // حفظ معرّف المهمة للسرعة
-    // ═══════════════════════════════════════════
-    private fun saveTaskId(packageName: String, taskId: Int) {
-        if (taskId == -1) return
-        when (packageName) {
-            app1Package -> app1TaskId = taskId
-            app2Package -> app2TaskId = taskId
         }
     }
 
@@ -207,7 +144,6 @@ class OverlayService : LifecycleService() {
         overlayView?.addView(divider)
         overlayView?.addView(btn2)
 
-        // ── جعل الزر قابل للسحب ──
         var initX = 0
         var initY = 0
         var initTouchX = 0f

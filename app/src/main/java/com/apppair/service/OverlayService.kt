@@ -1,5 +1,6 @@
 package com.apppair.service
 
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,7 +8,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.IBinder
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -35,6 +38,9 @@ class OverlayService : LifecycleService() {
     private var app1Package: String? = null
     private var app2Package: String? = null
 
+    // ═══ تتبع أي تطبيق يعمل حالياً كنافذة منبثقة ═══
+    private var currentFloatingApp: String? = null
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -60,17 +66,64 @@ class OverlayService : LifecycleService() {
         return START_STICKY
     }
 
-    private fun switchToApp(packageName: String?) {
+    // ═══════════════════════════════════════════════════════
+    // فتح التطبيق كنافذة منبثقة (Freeform Window)
+    // ═══════════════════════════════════════════════════════
+    private fun launchInFloatingWindow(packageName: String?) {
         packageName ?: return
-        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-            Intent.FLAG_ACTIVITY_SINGLE_TOP
-        )
-        startActivity(intent)
+
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent == null) return
+
+            launchIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+            )
+
+            // ═══ حساب حجم النافذة المنبثقة ═══
+            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val metrics = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getMetrics(metrics)
+
+            val screenW = metrics.widthPixels
+            val screenH = metrics.heightPixels
+
+            // ═══ حجم النافذة: 70% عرض × 60% ارتفاع ═══
+            val windowW = (screenW * 0.70).toInt()
+            val windowH = (screenH * 0.60).toInt()
+
+            // ═══ موقع النافذة: منتصف الشاشة ═══
+            val left = (screenW - windowW) / 2
+            val top = (screenH - windowH) / 3
+            val bounds = Rect(left, top, left + windowW, top + windowH)
+
+            // ═══ فتح كنافذة حرة (Freeform) ═══
+            val options = ActivityOptions.makeBasic()
+            options.setLaunchBounds(bounds)
+            startActivity(launchIntent, options.toBundle())
+
+            currentFloatingApp = packageName
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // ═══ خطة بديلة: فتح عادي ═══
+            try {
+                val fallback = packageManager.getLaunchIntentForPackage(packageName)
+                fallback?.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                if (fallback != null) startActivity(fallback)
+            } catch (_: Exception) {}
+        }
     }
 
+    // ═══════════════════════════════════════════
+    // إنشاء الزر العائم مع السحب
+    // ═══════════════════════════════════════════
     private fun showOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -97,7 +150,7 @@ class OverlayService : LifecycleService() {
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 14f
             setPadding(8, 8, 8, 8)
-            setOnClickListener { switchToApp(app1Package) }
+            setOnClickListener { launchInFloatingWindow(app1Package) }
         }
 
         val divider = TextView(this).apply {
@@ -111,16 +164,14 @@ class OverlayService : LifecycleService() {
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 14f
             setPadding(8, 8, 8, 8)
-            setOnClickListener { switchToApp(app2Package) }
+            setOnClickListener { launchInFloatingWindow(app2Package) }
         }
 
         overlayView?.addView(btn1)
         overlayView?.addView(divider)
         overlayView?.addView(btn2)
 
-        // ═══════════════════════════════════════════
-        // سحب الزر إلى أي موقع في الشاشة
-        // ═══════════════════════════════════════════
+        // ═══ سحب الزر ═══
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -148,7 +199,9 @@ class OverlayService : LifecycleService() {
                     if (isDragging) {
                         params.x = (initialX + dx).toInt()
                         params.y = (initialY + dy).toInt()
-                        windowManager?.updateViewLayout(overlayView, params)
+                        try {
+                            windowManager?.updateViewLayout(overlayView, params)
+                        } catch (_: Exception) {}
                     }
                     true
                 }
@@ -160,11 +213,19 @@ class OverlayService : LifecycleService() {
             }
         }
 
-        windowManager?.addView(overlayView, params)
+        try {
+            windowManager?.addView(overlayView, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun removeOverlay() {
-        overlayView?.let { windowManager?.removeView(it) }
+        overlayView?.let {
+            try {
+                windowManager?.removeView(it)
+            } catch (_: Exception) {}
+        }
         overlayView = null
     }
 

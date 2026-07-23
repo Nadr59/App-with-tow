@@ -56,17 +56,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ═══════════════════════════════════════════
+// المحتوى الرئيسي: يختار بين الدليل أو شاشة الاختيار
+// ═══════════════════════════════════════════
 @Composable
 fun MainContent() {
-    val ctx = LocalContext.current
     var showGuide by remember { mutableStateOf(isMiuiDevice()) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (showGuide) {
-            OemOptimizationGuide(onDone = { showGuide = false })
-        } else {
-            AppSelectionScreen()
-        }
+    if (showGuide) {
+        OemOptimizationGuide(onDone = { showGuide = false })
+    } else {
+        AppSelectionScreen()
     }
 }
 
@@ -75,6 +75,9 @@ private fun isMiuiDevice(): Boolean {
     return m.contains("xiaomi") || m.contains("redmi") || m.contains("poco")
 }
 
+// ═══════════════════════════════════════════
+// دليل إعداد OEM (يظهر فقط على أجهزة Xiaomi)
+// ═══════════════════════════════════════════
 @Composable
 fun OemOptimizationGuide(onDone: () -> Unit) {
     val ctx = LocalContext.current
@@ -95,17 +98,17 @@ fun OemOptimizationGuide(onDone: () -> Unit) {
         Spacer(Modifier.height(4.dp))
 
         Text(
-            text = "Your ${Build.MANUFACTURER} device kills background apps.\nComplete these steps once to fix it.",
+            text = "Your ${Build.MANUFACTURER} device kills background apps aggressively.\nComplete these steps once to fix it.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(Modifier.height(16.dp))
 
-        // ═══ الخطوة 1: تحسين البطارية ═══
+        // ═══ الخطوة 1: إعفاء AppPair من البطارية ═══
         StepCard(
             number = 1,
-            title = "Disable Battery Optimization",
+            title = "Disable Battery Optimization for AppPair",
             description = "Tap below → Find 'AppPair' → Select 'No restrictions'",
             isDone = step > 0,
             buttonText = "Open Battery Settings"
@@ -127,22 +130,22 @@ fun OemOptimizationGuide(onDone: () -> Unit) {
             step = 1
         }
 
-        // ═══ الخطوة 2: التشغيل التلقائي (MIUI) ═══
+        // ═══ الخطوة 2: التشغيل التلقائي لـ AppPair ═══
         StepCard(
             number = 2,
-            title = "Enable Auto-Start",
+            title = "Enable Auto-Start for AppPair",
             description = "Tap below → Enable 'AutoStart' for AppPair",
             isDone = step > 1,
-            buttonText = "Open Auto-Start"
+            buttonText = "Open Auto-Start Settings"
         ) {
             openMiuiAutoStart(ctx)
             step = 2
         }
 
-        // ═══ الخطوة 3: إعدادات MIUI Battery ═══
+        // ═══ الخطوة 3: إعدادات بطارية MIUI ═══
         StepCard(
             number = 3,
-            title = "MIUI Battery Saver → OFF",
+            title = "MIUI Battery Saver → OFF for AppPair",
             description = "Tap below → Set AppPair to 'No restrictions'",
             isDone = step > 2,
             buttonText = "Open MIUI Battery"
@@ -167,17 +170,59 @@ fun OemOptimizationGuide(onDone: () -> Unit) {
             step = 4
         }
 
-        Spacer(Modifier.height(24.dp))
+        // ═══ الخطوة 5: إعداد التطبيقات المختارة ═══
+        Spacer(Modifier.height(12.dp))
 
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "⚠️ ALSO exempt your TWO selected apps:",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "For EACH of your selected apps (Chrome, WhatsApp, Telegram, etc.):",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "• Settings → Apps → Manage apps → [Your App]\n• Enable AutoStart\n• Set Battery Saver to 'No restrictions'\n• Open Recents → Swipe DOWN on the app card to lock it",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Without this, MIUI will kill the apps when you switch between them!",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // ═══ زر المتابعة ═══
         Button(
             onClick = onDone,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("I've done all steps → Continue to App Selection")
         }
+
+        Spacer(Modifier.height(16.dp))
     }
 }
 
+// ═══════════════════════════════════════════
+// بطاقة خطوة واحدة
+// ═══════════════════════════════════════════
 @Composable
 fun StepCard(
     number: Int,
@@ -212,10 +257,7 @@ fun StepCard(
             Button(
                 onClick = onClick,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isDone,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                enabled = !isDone
             ) {
                 Text(buttonText)
             }
@@ -228,14 +270,18 @@ fun StepCard(
 // ═══════════════════════════════════════════
 private fun openMiuiAutoStart(ctx: Context) {
     val intents = listOf(
-        Intent().setComponent(ComponentName(
-            "com.miui.securitycenter",
-            "com.miui.permcenter.autostart.AutoStartManagementActivity"
-        )),
-        Intent().setComponent(ComponentName(
-            "com.miui.securitycenter",
-            "com.miui.permcenter.permissions.PermissionsEditorActivity"
-        )),
+        Intent().setComponent(
+            ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            )
+        ),
+        Intent().setComponent(
+            ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.permissions.PermissionsEditorActivity"
+            )
+        ),
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:${ctx.packageName}")
         }
@@ -250,14 +296,18 @@ private fun openMiuiAutoStart(ctx: Context) {
 
 private fun openMiuiBattery(ctx: Context) {
     val intents = listOf(
-        Intent().setComponent(ComponentName(
-            "com.miui.securitycenter",
-            "com.miui.powercenter.PowerSettings"
-        )),
-        Intent().setComponent(ComponentName(
-            "com.miui.securitycenter",
-            "com.miui.powercenter.PowerMainActivity"
-        )),
+        Intent().setComponent(
+            ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.powercenter.PowerSettings"
+            )
+        ),
+        Intent().setComponent(
+            ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.powercenter.PowerMainActivity"
+            )
+        ),
         Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
     )
     for (intent in intents) {

@@ -46,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -89,65 +88,119 @@ fun AppSelectionScreen(viewModel: MainViewModel = hiltViewModel()) {
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Overlay permission required", fontWeight = FontWeight.Bold)
-                            Text("Needed for floating switcher", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "Overlay permission required",
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Needed for floating switcher",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                         Button(
                             onClick = {
                                 context.startActivity(
-                                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        android.net.Uri.parse("package:${context.packageName}"))
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        android.net.Uri.parse("package:${context.packageName}")
+                                    )
                                 )
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) { Text("Grant") }
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Grant")
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
             }
 
-            Text("Select two apps:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Select two apps:",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+
             Spacer(Modifier.height(12.dp))
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppSlotCard("App 1", uiState.selectedApp1, selectingSlot == 1, { selectingSlot = 1 }, Modifier.weight(1f))
-                AppSlotCard("App 2", uiState.selectedApp2, selectingSlot == 2, { selectingSlot = 2 }, Modifier.weight(1f))
-.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppSlotCard(
+                    label = "App 1",
+                    app = uiState.selectedApp1,
+                    isSelected = selectingSlot == 1,
+                    onClick = { selectingSlot = 1 },
+                    modifier = Modifier.weight(1f)
+                )
+                AppSlotCard(
+                    label = "App 2",
+                    app = uiState.selectedApp2,
+                    isSelected = selectingSlot == 2,
+                    onClick = { selectingSlot = 2 },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
 
             if (uiState.selectedApp1 != null && uiState.selectedApp2 != null) {
-                Row            }
-
-            Spacer(Modifier.height(12(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Button(
                         onClick = {
-                            val intent = Intent(context, OverlayService::class.java).apply {
-                                putExtra(OverlayService.EXTRA_APP1, uiState.selectedApp1!!.packageName)
-                                putExtra(OverlayService.EXTRA_APP2, uiState.selectedApp2!!.packageName)
+                            val svcIntent = Intent(context, OverlayService::class.java).apply {
+                                putExtra(
+                                    OverlayService.EXTRA_APP1,
+                                    uiState.selectedApp1!!.packageName
+                                )
+                                putExtra(
+                                    OverlayService.EXTRA_APP2,
+                                    uiState.selectedApp2!!.packageName
+                                )
                             }
-                            context.startForegroundService(intent)
+                            context.startForegroundService(svcIntent)
                             viewModel.setServiceRunning(true)
                         },
                         modifier = Modifier.weight(1f),
                         enabled = !uiState.isServiceRunning
-                    ) { Text("Start") }
+                    ) {
+                        Text("Start")
+                    }
 
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(context, OverlayService::class.java).apply {
+                            val svcIntent = Intent(context, OverlayService::class.java).apply {
                                 action = OverlayService.ACTION_STOP
                             }
-                            context.startService(intent)
+                            context.startService(svcIntent)
                             viewModel.setServiceRunning(false)
                         },
                         modifier = Modifier.weight(1f),
                         enabled = uiState.isServiceRunning
-                    ) { Text("Stop") }
+                    ) {
+                        Text("Stop")
+                    }
                 }
+
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { viewModel.clearSelection() }, Modifier.fillMaxWidth()) {
+
+                OutlinedButton(
+                    onClick = { viewModel.clearSelection() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Clear")
                 }
             }
@@ -160,15 +213,54 @@ fun AppSelectionScreen(viewModel: MainViewModel = hiltViewModel()) {
             }
 
             when {
-                uiState.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                uiState.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(uiState.error!!, color = MaterialTheme.colorScheme.error) }
-                selectingSlot > 0 -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(uiState.installedApps) { app ->
-                        AppListItem(app) { when (selectingSlot) { 1 -> viewModel.selectApp1(app); 2 -> viewModel.selectApp2(app) }; selectingSlot = 0 }
+                uiState.isLoading -> {
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
                     }
                 }
-                else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Tap App 1 or App 2 above", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                uiState.error != null -> {
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            uiState.error!!,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                selectingSlot > 0 -> {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(uiState.installedApps) { app ->
+                            AppListItem(app) {
+                                when (selectingSlot) {
+                                    1 -> viewModel.selectApp1(app)
+                                    2 -> viewModel.selectApp2(app)
+                                }
+                                selectingSlot = 0
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Tap App 1 or App 2 above",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -176,30 +268,98 @@ fun AppSelectionScreen(viewModel: MainViewModel = hiltViewModel()) {
 }
 
 @Composable
-fun AppSlotCard(label: String, app: InstalledApp?, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(modifier.height(100.dp).clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+fun AppSlotCard(
+    label: String,
+    app: InstalledApp?,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .height(100.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
             if (app != null) {
-                app.icon?.let { d -> Image(bitmap = d.toBitmap(48, 48, Bitmap.Config.ARGB_8888).asImageBitmap(), contentDescription = app.name, modifier = Modifier.size(40.dp)) }
+                app.icon?.let { drawable ->
+                    Image(
+                        bitmap = drawable
+                            .toBitmap(48, 48, Bitmap.Config.ARGB_8888)
+                            .asImageBitmap(),
+                        contentDescription = app.name,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
-                Text(app.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    app.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             } else {
                 Text(label, fontWeight = FontWeight.Bold)
-                Text("Tap to select", style = MaterialTheme.typography().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            app.icon?.let { d -> Image(bitmap = d.toBitmap(40, 40, Bitmap.Config.ARGB_8888).asImageBitmap(), contentDescription = app.name, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))) }
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(app.name)
-                Text(app.packageName, style () -> Unit) {
-    Card(Modifier.fillMaxWidth.bodySmall)
+                Text(
+                    "Tap to select",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
 }
 
 @Composable
-fun AppListItem(app: InstalledApp, onClick:().clickable { onClick() }, shape = RoundedCornerShape(8.dp)) {
-        Row(Modifier.fillMaxWidth = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+fun AppListItem(
+    app: InstalledApp,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            app.icon?.let { drawable ->
+                Image(
+                    bitmap = drawable
+                        .toBitmap(40, 40, Bitmap.Config.ARGB_8888)
+                        .asImageBitmap(),
+                    contentDescription = app.name,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            Column {
+                Text(app.name)
+                Text(
+                    app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

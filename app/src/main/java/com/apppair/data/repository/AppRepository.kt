@@ -28,38 +28,73 @@ class AppRepository @Inject constructor(
     val app2Package: Flow<String?> = preferences.app2Package
     val serviceActive: Flow<Boolean> = preferences.serviceActive
 
-    val hasSelection: Flow<Boolean> = combine(preferences.app1Package, preferences.app2Package) { a, b -> a != null && b != null }
+    val hasSelection: Flow<Boolean> = combine(
+        preferences.app1Package, preferences.app2Package
+    ) { a, b -> a != null && b != null }
 
     val selectedAppPairFlow: Flow<SelectedAppPair> = combine(
         preferences.app1Package, preferences.app2Package, preferences.serviceActive
     ) { a, b, s -> SelectedAppPair(a, b, s) }
 
-    suspend fun saveSelectedApps(pkgA: String, pkgB: String) { try { preferences.saveSelectedApps(pkgA, pkgB) } catch (_: Exception) {} }
-    suspend fun selectApps(pkgA: String, pkgB: String) = saveSelectedApps(pkgA, pkgB)
-    suspend fun setServiceActive(active: Boolean) { try { preferences.setServiceActive(active) } catch (_: Exception) {} }
-    suspend fun clearSelection() { try { preferences.clear() } catch (_: Exception) {} }
+    suspend fun saveSelectedApps(pkgA: String, pkgB: String) {
+        preferences.saveSelectedApps(pkgA, pkgB)
+    }
 
-    fun checkPermissions(): PermissionStatus { return try { PermissionUtils.checkPermissions(context) } catch (_: Exception) { PermissionStatus() } }
+    suspend fun selectApps(pkgA: String, pkgB: String) {
+        preferences.saveSelectedApps(pkgA, pkgB)
+    }
+
+    suspend fun setServiceActive(active: Boolean) {
+        preferences.setServiceActive(active)
+    }
+
+    suspend fun clearSelection() {
+        preferences.clear()
+    }
+
+    fun checkPermissions(): PermissionStatus {
+        return PermissionUtils.checkPermissions(context)
+    }
 
     fun getInstalledApps(): List<InstalledApp> {
-        return try {
-            val pm = context.packageManager
-            val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-            val infos = try {
-                if (android.os.Build.VERSION.SDK_INT >= 33) pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
-                else @Suppress("DEPRECATION") pm.queryIntentActivities(intent, 0)
-            } catch (_: Exception) { emptyList() }
-            infos.filter { it.activityInfo.packageName != context.packageName }.mapNotNull { info ->
-                try { InstalledApp(info.loadLabel(pm)?.toString() ?: info.activityInfo.packageName, info.activityInfo.packageName, try { info.loadIcon(pm) } catch (_: Exception) { null }) }
-                catch (_: Exception) { null }
-            }.sortedBy { it.name.lowercase() }
-        } catch (_: Exception) { emptyList() }
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfos = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(intent, 0)
+        }
+        return resolveInfos
+            .filter { it.activityInfo.packageName != context.packageName }
+            .map {
+                InstalledApp(
+                    name = it.loadLabel(pm).toString(),
+                    packageName = it.activityInfo.packageName,
+                    icon = it.loadIcon(pm)
+                )
+            }
+            .sortedBy { it.name.lowercase() }
     }
 
     fun launchApp(packageName: String): Boolean {
-        return try { val i = context.packageManager.getLaunchIntentForPackage(packageName); if (i != null) { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); context.startActivity(i); true } else false }
-        catch (_: Exception) { false }
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return true
+        }
+        return false
     }
 
-    fun isAppInstalled(packageName: String): Boolean { return try { context.packageManager.getPackageInfo(packageName, 0); true } catch (_: Exception) { false } }
+    fun isAppInstalled(packageName: String): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+    }
 }

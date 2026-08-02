@@ -270,7 +270,8 @@ class OverlayService : LifecycleService() {
             addView(createSeparator(density))
 
             // ═══ أزرار التحكم ═══
-            val controls = LinearLayout(this).apply {
+                        // ═══ أزرار التحكم ═══
+            val controls = LinearLayout(this@OverlayService).apply  {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
                 setPadding(0, (4 * density).toInt(), 0, 0)
@@ -308,7 +309,7 @@ class OverlayService : LifecycleService() {
     ): TextView {
         val pad = (12 * density).toInt()
 
-        return TextView(this).apply {
+        return TextView(this@OverlayService).apply {
             this.text = "▶ $text"
             setTextColor(color)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -349,7 +350,7 @@ class OverlayService : LifecycleService() {
         val size = (36 * density).toInt()
         val margin = (4 * density).toInt()
 
-        return TextView(this).apply {
+        return TextView(this@OverlayService).apply {
             this.text = text
             setTextColor(color)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -367,7 +368,7 @@ class OverlayService : LifecycleService() {
     }
 
     private fun createSeparator(density: Float): View {
-        return View(this).apply {
+        return View(this@OverlayService).apply {
             setBackgroundColor(0xFF333333.toInt())
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,

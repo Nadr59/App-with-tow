@@ -40,7 +40,7 @@ class OverlayService : LifecycleService() {
         const val EXTRA_APP1 = "app1_package"
         const val EXTRA_APP2 = "app2_package"
         private const val TAG = "OverlayService"
-        private const val CHECK_INTERVAL = 8_000L
+        private const val CHECK_INTERVAL = 15_000L
     }
 
     private var windowManager: WindowManager? = null
@@ -50,7 +50,6 @@ class OverlayService : LifecycleService() {
     private var app1Package: String = ""
     private var app2Package: String = ""
     private var isRunning = false
-    private var app1Launched = false
 
     private var screenW = 0
     private var screenH = 0
@@ -58,11 +57,18 @@ class OverlayService : LifecycleService() {
 
     private val handler = Handler(Looper.getMainLooper())
 
-    // ═══ فحص دوري: أعد إظهار App1 إذا اختفى ═══
+    // ═══ فحص دوري: فقط تأكد أن App1 يعمل ═══
     private val checkRunnable = object : Runnable {
         override fun run() {
             if (!isRunning) return
-            bringApp1ToFront()
+
+            if (isApp1Running()) {
+                Log.d(TAG, "App1 is running, OK")
+            } else {
+                Log.d(TAG, "App1 died, relaunching in freeform")
+                launchApp1Freeform()
+            }
+
             handler.postDelayed(this, CHECK_INTERVAL)
         }
     }
@@ -100,8 +106,14 @@ class OverlayService : LifecycleService() {
                 isRunning = true
                 calculateBounds()
                 showWidget()
-                launchApp1Fresh()
-                launchApp2()
+
+                // افتح App1 في نافذة مصغرة
+                launchApp1Freeform()
+
+                // انتظر ثم افتح App2
+                handler.postDelayed({ launchApp2() }, 1500)
+
+                // فحص دوري
                 handler.postDelayed(checkRunnable, CHECK_INTERVAL)
             }
         }
@@ -115,93 +127,124 @@ class OverlayService : LifecycleService() {
     private fun calculateBounds() {
         val w = (screenW * 0.45).toInt()
         val h = (screenH * 0.50).toInt()
-        val x = screenW - w - 30
-        val y = 100
+        val x = screenW - w - 20
+        val y = 80
         app1Bounds.set(x, y, x + w, y + h)
     }
 
     // ═══════════════════════════════════════════
-    // تشغيل App1 لأول مرة (Freeform)
+    // هل App1 يعمل حالياً؟
     // ═══════════════════════════════════════════
-    private fun launchApp1Fresh() {
+    private fun isApp1Running(): Boolean {
+        if (app1Package.isBlank()) return false
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        try {
+            for (task in am.appTasks) {
+                val info = task.taskInfo
+                if (info.baseActivity?.packageName == app1Package) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        // طريقة بديلة
+        try {
+            @Suppress("DEPRECATION")
+            val processes = am.runningAppProcesses
+            processes?.forEach {
+                if (it.processName == app1Package &&
+                    it.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+                ) return true
+            }
+        } catch (_: Exception) {}
+
+        return false
+    }
+
+    // ═══════════════════════════════════════════
+    // فتح App1 في نافذة مصغرة (Freeform)
+    // ═══════════════════════════════════════════
+    private fun launchApp1Freeform() {
         if (app1Package.isBlank()) return
 
-        val intent = packageManager.getLaunchIntentForPackage(app1Package) ?: return
+        // ═══ أولاً: حاول إحضار النسخة الموجودة ═══
+        if (bringExistingToFront()) {
+            Log.d(TAG, "App1: brought existing to front")
+            return
+        }
 
-        // نستخدم NEW_TASK + MULTIPLE_TASK لإنشاء مهمة جديدة
+        // ═══ ثانياً: افتح نسخة جديدة ═══
+        val intent = packageManager.getLaunchIntentForPackage(app1Package) ?: return
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_MULTIPLE_TASK
         )
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val options = ActivityOptions.makeBasic()
-                options.setLaunchBounds(app1Bounds)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val options = ActivityOptions.makeBasic()
+            options.setLaunchBounds(app1Bounds)
+
+            // حاول تعيين وضع Freeform صراحةً
+            try {
+                ActivityOptions::class.java
+                    .getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType)
+                    .invoke(options, 5) // WINDOWING_MODE_FREEFORM = 5
+            } catch (_: Exception) {}
+
+            try {
                 startActivity(intent, options.toBundle())
                 Log.d(TAG, "App1 launched FREEFORM: $app1Bounds")
-            } else {
-                startActivity(intent)
-                Log.d(TAG, "App1 launched NORMAL")
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "Freeform failed", e)
             }
-            app1Launched = true
+        }
+
+        // خطة بديلة: فتح عادي
+        try {
+            startActivity(intent)
+            Log.d(TAG, "App1 launched NORMAL (fallback)")
         } catch (e: Exception) {
-            Log.e(TAG, "Freeform failed, trying normal", e)
-            try {
-                startActivity(intent)
-                app1Launched = true
-            } catch (_: Exception) {}
+            Log.e(TAG, "Failed to launch App1", e)
         }
     }
 
     // ═══════════════════════════════════════════
-    // إحضار App1 للأمام (بدون إعادة تشغيل!)
+    // إحضار النسخة الموجودة للأمام
     // ═══════════════════════════════════════════
-    private fun bringApp1ToFront() {
-        if (app1Package.isBlank()) return
-
-        // الطريقة 1: moveTaskToFront (لا يُنشئ نسخة جديدة)
+    private fun bringExistingToFront(): Boolean {
         val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         try {
-            @Suppress("DEPRECATION")
-            val tasks = am.getRunningTasks(100)
-            for (task in tasks) {
-                if (task.baseActivity?.packageName == app1Package) {
-                    am.moveTaskToFront(task.id, 0)
-                    Log.d(TAG, "App1 moved to front: task=${task.id}")
-                    return
+            for (task in am.appTasks) {
+                if (task.taskInfo.baseActivity?.packageName == app1Package) {
+                    task.moveToFront()
+                    Log.d(TAG, "App1: moved existing task to front")
+                    return true
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "moveTaskToFront failed", e)
+            Log.e(TAG, "moveToFront failed", e)
         }
-
-        // الطريقة 2: REORDER_TO_FRONT (لا يُنشئ نسخة جديدة)
-        val intent = packageManager.getLaunchIntentForPackage(app1Package) ?: return
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-        )
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && app1Launched) {
-                val options = ActivityOptions.makeBasic()
-                options.setLaunchBounds(app1Bounds)
-                startActivity(intent, options.toBundle())
-            } else {
-                startActivity(intent)
-            }
-            Log.d(TAG, "App1 brought to front via REORDER_TO_FRONT")
-        } catch (e: Exception) {
-            Log.e(TAG, "bringApp1ToFront failed", e)
-        }
+        return false
     }
 
     // ═══════════════════════════════════════════
-    // فتح App2 عادي
+    // فتح App2 عادي (ملء الشاشة)
     // ═══════════════════════════════════════════
     private fun launchApp2() {
         if (app2Package.isBlank()) return
+
+        // حاول إحضار الموجود أولاً
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        try {
+            for (task in am.appTasks) {
+                if (task.taskInfo.baseActivity?.packageName == app2Package) {
+                    task.moveToFront()
+                    Log.d(TAG, "App2: moved existing to front")
+                    return
+                }
+            }
+        } catch (_: Exception) {}
 
         val intent = packageManager.getLaunchIntentForPackage(app2Package) ?: return
         intent.addFlags(
@@ -344,17 +387,15 @@ class OverlayService : LifecycleService() {
             }
             elevation = 10 * density
 
-            // App 1
             addView(createAppButton(
                 "▶ ${getAppName(app1Package)}", 0xFFE8C547.toInt(), density
             ) {
-                bringApp1ToFront()
+                launchApp1Freeform()
                 collapseWidget(density)
             })
 
             addView(createSeparator(density))
 
-            // App 2
             addView(createAppButton(
                 "▶ ${getAppName(app2Package)}", 0xFF4CAF50.toInt(), density
             ) {
@@ -364,7 +405,6 @@ class OverlayService : LifecycleService() {
 
             addView(createSeparator(density))
 
-            // إيقاف
             addView(createAppButton(
                 "✕ إيقاف", 0xFFF44336.toInt(), density
             ) {
@@ -456,7 +496,6 @@ class OverlayService : LifecycleService() {
 
     private fun stopEverything() {
         isRunning = false
-        app1Launched = false
         handler.removeCallbacks(checkRunnable)
         removeWidget()
     }

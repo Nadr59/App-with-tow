@@ -1,6 +1,7 @@
 package com.apppair.service
 
 import android.annotation.SuppressLint
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,11 +9,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -36,27 +39,31 @@ class OverlayService : LifecycleService() {
         const val EXTRA_APP1 = "app1_package"
         const val EXTRA_APP2 = "app2_package"
         private const val TAG = "OverlayService"
-        private const val RELAUNCH_INTERVAL = 10_000L
+        private const val RELAUNCH_INTERVAL = 15_000L
     }
 
+    // ═══ الزر العائم ═══
     private var windowManager: WindowManager? = null
     private var widgetView: View? = null
+    private var isExpanded = false
+
+    // ═══ التطبيقات ═══
     private var app1Package: String = ""
     private var app2Package: String = ""
     private var isRunning = false
-    private var isExpanded = false
 
-    private lateinit var floatingMgr: FloatingWindowManager
+    // ═══ حجم وموقع نافذة App1 ═══
+    private var screenW = 0
+    private var screenH = 0
+    private var app1Bounds = Rect()
+
     private val handler = Handler(Looper.getMainLooper())
 
-    // ═══ فحص دوري: إعادة تشغيل App1 إذا مات ═══
+    // ═══ فحص دوري: تأكد أن App1 لا يزال يعمل ═══
     private val relaunchRunnable = object : Runnable {
         override fun run() {
             if (!isRunning) return
-            if (floatingMgr.isActive && floatingMgr.app1Package.isNotBlank()) {
-                // حاول إعادة تشغيل App1
-                floatingMgr.launchInFloatingWindow(floatingMgr.app1Package)
-            }
+            launchApp1InFloating()
             handler.postDelayed(this, RELAUNCH_INTERVAL)
         }
     }
@@ -65,7 +72,13 @@ class OverlayService : LifecycleService() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
-        floatingMgr = FloatingWindowManager(this)
+
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getMetrics(metrics)
+        screenW = metrics.widthPixels
+        screenH = metrics.heightPixels
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,8 +95,20 @@ class OverlayService : LifecycleService() {
 
         if (app1Package.isNotBlank() && app2Package.isNotBlank() && !isRunning) {
             isRunning = true
+
+            // احسب حجم نافذة App1 المصغرة
+            calculateApp1Bounds()
+
+            // أظهر الزر العائم
             showWidget()
-            launchApp1()
+
+            // افتح App1 في نافذة مصغرة
+            launchApp1InFloating()
+
+            // افتح App2 عادي
+            launchApp2()
+
+            // فحص دوري
             handler.postDelayed(relaunchRunnable, RELAUNCH_INTERVAL)
         }
 
@@ -91,16 +116,53 @@ class OverlayService : LifecycleService() {
     }
 
     // ═══════════════════════════════════════════
-    // تشغيل App1 في نافذة منبثقة
+    // حساب حجم النافذة المصغرة
     // ═══════════════════════════════════════════
-    private fun launchApp1() {
-        floatingMgr.launchInFloatingWindow(app1Package)
+    private fun calculateApp1Bounds() {
+        // حجم صغير: 40% عرض × 45% ارتفاع
+        val w = (screenW * 0.40).toInt()
+        val h = (screenH * 0.45).toInt()
+        // موقع: أسفل يمين الشاشة
+        val x = screenW - w - 20
+        val y = screenH - h - 200
+        app1Bounds.set(x, y, x + w, y + h)
     }
 
     // ═══════════════════════════════════════════
-    // تشغيل App2 عادي (ملء الشاشة)
+    // فتح App1 في نافذة مصغرة (Freeform)
     // ═══════════════════════════════════════════
-    private fun switchToApp2() {
+    private fun launchApp1InFloating() {
+        if (app1Package.isBlank()) return
+
+        val intent = packageManager.getLaunchIntentForPackage(app1Package) ?: return
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val options = ActivityOptions.makeBasic()
+                options.setLaunchBounds(app1Bounds)
+                startActivity(intent, options.toBundle())
+            } else {
+                startActivity(intent)
+            }
+            Log.d(TAG, "App1 launched in floating window: $app1Bounds")
+        } catch (e: Exception) {
+            Log.e(TAG, "Freeform failed, trying normal", e)
+            try {
+                startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // فتح App2 عادي (ملء الشاشة)
+    // ═══════════════════════════════════════════
+    private fun launchApp2() {
+        if (app2Package.isBlank()) return
+
         val intent = packageManager.getLaunchIntentForPackage(app2Package) ?: return
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -108,19 +170,20 @@ class OverlayService : LifecycleService() {
         )
         try {
             startActivity(intent)
+            Log.d(TAG, "App2 launched: $app2Package")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch App2", e)
         }
     }
 
     // ═══════════════════════════════════════════
-    // الزر العائم الدائري
+    // الزر العائم البسيط
     // ═══════════════════════════════════════════
     @SuppressLint("ClickableViewAccessibility")
     private fun showWidget() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val density = resources.displayMetrics.density
-        val size = (56 * density).toInt()
+        val size = (52 * density).toInt()
 
         widgetView = createWidgetView(density)
 
@@ -133,10 +196,10 @@ class OverlayService : LifecycleService() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 20
-            y = (resources.displayMetrics.heightPixels * 0.3f).toInt()
+            y = (screenH * 0.4f).toInt()
         }
 
-        // ═══ سحب + ضغط ═══
+        // ═══ سحب ═══
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -190,14 +253,14 @@ class OverlayService : LifecycleService() {
     }
 
     private fun createWidgetView(density: Float): View {
-        val size = (56 * density).toInt()
+        val size = (52 * density).toInt()
 
-        val container = FrameLayout(this).apply {
+        val container = FrameLayout(this@OverlayService).apply {
             layoutParams = FrameLayout.LayoutParams(size, size)
         }
 
         // ═══ الدائرة ═══
-        val circle = View(this).apply {
+        val circle = View(this@OverlayService).apply {
             layoutParams = FrameLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -209,9 +272,9 @@ class OverlayService : LifecycleService() {
         container.addView(circle)
 
         // ═══ أيقونة ⇄ ═══
-        val icon = TextView(this).apply {
+        val icon = TextView(this@OverlayService).apply {
             text = "⇄"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             setTextColor(0xFF000000.toInt())
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(size, size)
@@ -228,10 +291,10 @@ class OverlayService : LifecycleService() {
     }
 
     private fun createExpandedPanel(density: Float): LinearLayout {
-        val panelW = (260 * density).toInt()
+        val panelW = (220 * density).toInt()
         val pad = (10 * density).toInt()
 
-        return LinearLayout(this).apply {
+        return LinearLayout(this@OverlayService).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
             layoutParams = FrameLayout.LayoutParams(
@@ -239,7 +302,7 @@ class OverlayService : LifecycleService() {
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                leftMargin = (60 * density).toInt()
+                leftMargin = (56 * density).toInt()
             }
 
             background = GradientDrawable().apply {
@@ -251,9 +314,10 @@ class OverlayService : LifecycleService() {
 
             // ═══ App 1 ═══
             addView(createAppButton(
-                getAppName(app1Package), 0xFFE8C547.toInt(), density
+                "▶ ${getAppName(app1Package)}",
+                0xFFE8C547.toInt(), density
             ) {
-                launchApp1()
+                launchApp1InFloating()
                 collapseWidget(density)
             })
 
@@ -261,43 +325,20 @@ class OverlayService : LifecycleService() {
 
             // ═══ App 2 ═══
             addView(createAppButton(
-                getAppName(app2Package), 0xFF4CAF50.toInt(), density
+                "▶ ${getAppName(app2Package)}",
+                0xFF4CAF50.toInt(), density
             ) {
-                switchToApp2()
+                launchApp2()
                 collapseWidget(density)
             })
 
             addView(createSeparator(density))
 
-            // ═══ أزرار التحكم ═══
-                        // ═══ أزرار التحكم ═══
-            val controls = LinearLayout(this@OverlayService).apply  {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                setPadding(0, (4 * density).toInt(), 0, 0)
-            }
-
-            controls.addView(createControlBtn("−", 0xFFFFC107.toInt(), density) {
-                floatingMgr.minimize()
-                collapseWidget(density)
-            })
-
-            controls.addView(createControlBtn("□", 0xFF2196F3.toInt(), density) {
-                floatingMgr.maximize()
-                collapseWidget(density)
-            })
-
-            controls.addView(createControlBtn("R", 0xFF9C27B0.toInt(), density) {
-                floatingMgr.restore()
-                collapseWidget(density)
-            })
-
-            controls.addView(createControlBtn("✕", 0xFFF44336.toInt(), density) {
+            // ═══ إغلاق ═══
+            addView(createAppButton("✕ إيقاف", 0xFFF44336.toInt(), density) {
                 stopEverything()
                 stopSelf()
             })
-
-            addView(controls)
         }
     }
 
@@ -310,58 +351,18 @@ class OverlayService : LifecycleService() {
         val pad = (12 * density).toInt()
 
         return TextView(this@OverlayService).apply {
-            this.text = "▶ $text"
+            this.text = text
             setTextColor(color)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(pad, (10 * density).toInt(), pad, (10 * density).toInt())
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                (48 * density).toInt()
+                (44 * density).toInt()
             )
-
             background = GradientDrawable().apply {
                 cornerRadius = 8 * density
                 setColor(0x00000000)
-            }
-
-            setOnClickListener { onClick() }
-
-            setOnTouchListener { v, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        (v.background as? GradientDrawable)?.setColor(0x22FFFFFF)
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        (v.background as? GradientDrawable)?.setColor(0x00000000)
-                    }
-                }
-                false
-            }
-        }
-    }
-
-    private fun createControlBtn(
-        text: String,
-        color: Int,
-        density: Float,
-        onClick: () -> Unit
-    ): TextView {
-        val size = (36 * density).toInt()
-        val margin = (4 * density).toInt()
-
-        return TextView(this@OverlayService).apply {
-            this.text = text
-            setTextColor(color)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                marginStart = margin
-                marginEnd = margin
-            }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0x33FFFFFF)
             }
             setOnClickListener { onClick() }
         }
@@ -376,8 +377,6 @@ class OverlayService : LifecycleService() {
             ).apply {
                 marginStart = (12 * density).toInt()
                 marginEnd = (12 * density).toInt()
-                topMargin = (4 * density).toInt()
-                bottomMargin = (4 * density).toInt()
             }
         }
     }
@@ -394,7 +393,7 @@ class OverlayService : LifecycleService() {
         panel.animate().alpha(1f).setDuration(200).start()
 
         val params = widgetView?.layoutParams as? WindowManager.LayoutParams ?: return
-        params.width = (320 * density).toInt()
+        params.width = (280 * density).toInt()
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         try {
@@ -412,7 +411,7 @@ class OverlayService : LifecycleService() {
         container.getChildAt(1).alpha = 1f
 
         val params = widgetView?.layoutParams as? WindowManager.LayoutParams ?: return
-        val size = (56 * density).toInt()
+        val size = (52 * density).toInt()
         params.width = size
         params.height = size
         params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -437,7 +436,6 @@ class OverlayService : LifecycleService() {
     private fun stopEverything() {
         isRunning = false
         handler.removeCallbacks(relaunchRunnable)
-        floatingMgr.close()
         removeWidget()
     }
 

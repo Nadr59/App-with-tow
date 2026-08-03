@@ -1,6 +1,7 @@
 package com.apppair.service
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
@@ -39,32 +40,30 @@ class OverlayService : LifecycleService() {
         const val EXTRA_APP1 = "app1_package"
         const val EXTRA_APP2 = "app2_package"
         private const val TAG = "OverlayService"
-        private const val RELAUNCH_INTERVAL = 15_000L
+        private const val CHECK_INTERVAL = 8_000L
     }
 
-    // ═══ الزر العائم ═══
     private var windowManager: WindowManager? = null
     private var widgetView: View? = null
     private var isExpanded = false
 
-    // ═══ التطبيقات ═══
     private var app1Package: String = ""
     private var app2Package: String = ""
     private var isRunning = false
+    private var app1Launched = false
 
-    // ═══ حجم وموقع نافذة App1 ═══
     private var screenW = 0
     private var screenH = 0
     private var app1Bounds = Rect()
 
     private val handler = Handler(Looper.getMainLooper())
 
-    // ═══ فحص دوري: تأكد أن App1 لا يزال يعمل ═══
-    private val relaunchRunnable = object : Runnable {
+    // ═══ فحص دوري: أعد إظهار App1 إذا اختفى ═══
+    private val checkRunnable = object : Runnable {
         override fun run() {
             if (!isRunning) return
-            launchApp1InFloating()
-            handler.postDelayed(this, RELAUNCH_INTERVAL)
+            bringApp1ToFront()
+            handler.postDelayed(this, CHECK_INTERVAL)
         }
     }
 
@@ -90,26 +89,21 @@ class OverlayService : LifecycleService() {
             return START_NOT_STICKY
         }
 
-        app1Package = intent?.getStringExtra(EXTRA_APP1) ?: ""
-        app2Package = intent?.getStringExtra(EXTRA_APP2) ?: ""
+        val newApp1 = intent?.getStringExtra(EXTRA_APP1) ?: ""
+        val newApp2 = intent?.getStringExtra(EXTRA_APP2) ?: ""
 
-        if (app1Package.isNotBlank() && app2Package.isNotBlank() && !isRunning) {
-            isRunning = true
+        if (newApp1.isNotBlank() && newApp2.isNotBlank()) {
+            app1Package = newApp1
+            app2Package = newApp2
 
-            // احسب حجم نافذة App1 المصغرة
-            calculateApp1Bounds()
-
-            // أظهر الزر العائم
-            showWidget()
-
-            // افتح App1 في نافذة مصغرة
-            launchApp1InFloating()
-
-            // افتح App2 عادي
-            launchApp2()
-
-            // فحص دوري
-            handler.postDelayed(relaunchRunnable, RELAUNCH_INTERVAL)
+            if (!isRunning) {
+                isRunning = true
+                calculateBounds()
+                showWidget()
+                launchApp1Fresh()
+                launchApp2()
+                handler.postDelayed(checkRunnable, CHECK_INTERVAL)
+            }
         }
 
         return START_STICKY
@@ -118,23 +112,23 @@ class OverlayService : LifecycleService() {
     // ═══════════════════════════════════════════
     // حساب حجم النافذة المصغرة
     // ═══════════════════════════════════════════
-    private fun calculateApp1Bounds() {
-        // حجم صغير: 40% عرض × 45% ارتفاع
-        val w = (screenW * 0.40).toInt()
-        val h = (screenH * 0.45).toInt()
-        // موقع: أسفل يمين الشاشة
-        val x = screenW - w - 20
-        val y = screenH - h - 200
+    private fun calculateBounds() {
+        val w = (screenW * 0.45).toInt()
+        val h = (screenH * 0.50).toInt()
+        val x = screenW - w - 30
+        val y = 100
         app1Bounds.set(x, y, x + w, y + h)
     }
 
     // ═══════════════════════════════════════════
-    // فتح App1 في نافذة مصغرة (Freeform)
+    // تشغيل App1 لأول مرة (Freeform)
     // ═══════════════════════════════════════════
-    private fun launchApp1InFloating() {
+    private fun launchApp1Fresh() {
         if (app1Package.isBlank()) return
 
         val intent = packageManager.getLaunchIntentForPackage(app1Package) ?: return
+
+        // نستخدم NEW_TASK + MULTIPLE_TASK لإنشاء مهمة جديدة
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_MULTIPLE_TASK
@@ -145,20 +139,66 @@ class OverlayService : LifecycleService() {
                 val options = ActivityOptions.makeBasic()
                 options.setLaunchBounds(app1Bounds)
                 startActivity(intent, options.toBundle())
+                Log.d(TAG, "App1 launched FREEFORM: $app1Bounds")
             } else {
                 startActivity(intent)
+                Log.d(TAG, "App1 launched NORMAL")
             }
-            Log.d(TAG, "App1 launched in floating window: $app1Bounds")
+            app1Launched = true
         } catch (e: Exception) {
             Log.e(TAG, "Freeform failed, trying normal", e)
             try {
                 startActivity(intent)
+                app1Launched = true
             } catch (_: Exception) {}
         }
     }
 
     // ═══════════════════════════════════════════
-    // فتح App2 عادي (ملء الشاشة)
+    // إحضار App1 للأمام (بدون إعادة تشغيل!)
+    // ═══════════════════════════════════════════
+    private fun bringApp1ToFront() {
+        if (app1Package.isBlank()) return
+
+        // الطريقة 1: moveTaskToFront (لا يُنشئ نسخة جديدة)
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        try {
+            @Suppress("DEPRECATION")
+            val tasks = am.getRunningTasks(100)
+            for (task in tasks) {
+                if (task.baseActivity?.packageName == app1Package) {
+                    am.moveTaskToFront(task.id, 0)
+                    Log.d(TAG, "App1 moved to front: task=${task.id}")
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "moveTaskToFront failed", e)
+        }
+
+        // الطريقة 2: REORDER_TO_FRONT (لا يُنشئ نسخة جديدة)
+        val intent = packageManager.getLaunchIntentForPackage(app1Package) ?: return
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && app1Launched) {
+                val options = ActivityOptions.makeBasic()
+                options.setLaunchBounds(app1Bounds)
+                startActivity(intent, options.toBundle())
+            } else {
+                startActivity(intent)
+            }
+            Log.d(TAG, "App1 brought to front via REORDER_TO_FRONT")
+        } catch (e: Exception) {
+            Log.e(TAG, "bringApp1ToFront failed", e)
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // فتح App2 عادي
     // ═══════════════════════════════════════════
     private fun launchApp2() {
         if (app2Package.isBlank()) return
@@ -177,7 +217,7 @@ class OverlayService : LifecycleService() {
     }
 
     // ═══════════════════════════════════════════
-    // الزر العائم البسيط
+    // الزر العائم
     // ═══════════════════════════════════════════
     @SuppressLint("ClickableViewAccessibility")
     private fun showWidget() {
@@ -199,7 +239,6 @@ class OverlayService : LifecycleService() {
             y = (screenH * 0.4f).toInt()
         }
 
-        // ═══ سحب ═══
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -233,11 +272,8 @@ class OverlayService : LifecycleService() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!isDragging) {
-                        if (isExpanded) {
-                            collapseWidget(density)
-                        } else {
-                            expandWidget(density)
-                        }
+                        if (isExpanded) collapseWidget(density)
+                        else expandWidget(density)
                     }
                     true
                 }
@@ -259,7 +295,6 @@ class OverlayService : LifecycleService() {
             layoutParams = FrameLayout.LayoutParams(size, size)
         }
 
-        // ═══ الدائرة ═══
         val circle = View(this@OverlayService).apply {
             layoutParams = FrameLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
@@ -271,7 +306,6 @@ class OverlayService : LifecycleService() {
         }
         container.addView(circle)
 
-        // ═══ أيقونة ⇄ ═══
         val icon = TextView(this@OverlayService).apply {
             text = "⇄"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
@@ -281,7 +315,6 @@ class OverlayService : LifecycleService() {
         }
         container.addView(icon)
 
-        // ═══ اللوحة الموسّعة (مخفية) ═══
         val panel = createExpandedPanel(density)
         panel.visibility = View.GONE
         panel.tag = "expanded"
@@ -291,7 +324,7 @@ class OverlayService : LifecycleService() {
     }
 
     private fun createExpandedPanel(density: Float): LinearLayout {
-        val panelW = (220 * density).toInt()
+        val panelW = (240 * density).toInt()
         val pad = (10 * density).toInt()
 
         return LinearLayout(this@OverlayService).apply {
@@ -304,7 +337,6 @@ class OverlayService : LifecycleService() {
                 gravity = Gravity.CENTER_VERTICAL
                 leftMargin = (56 * density).toInt()
             }
-
             background = GradientDrawable().apply {
                 cornerRadius = 12 * density
                 setColor(0xDD1A1A1A.toInt())
@@ -312,21 +344,19 @@ class OverlayService : LifecycleService() {
             }
             elevation = 10 * density
 
-            // ═══ App 1 ═══
+            // App 1
             addView(createAppButton(
-                "▶ ${getAppName(app1Package)}",
-                0xFFE8C547.toInt(), density
+                "▶ ${getAppName(app1Package)}", 0xFFE8C547.toInt(), density
             ) {
-                launchApp1InFloating()
+                bringApp1ToFront()
                 collapseWidget(density)
             })
 
             addView(createSeparator(density))
 
-            // ═══ App 2 ═══
+            // App 2
             addView(createAppButton(
-                "▶ ${getAppName(app2Package)}",
-                0xFF4CAF50.toInt(), density
+                "▶ ${getAppName(app2Package)}", 0xFF4CAF50.toInt(), density
             ) {
                 launchApp2()
                 collapseWidget(density)
@@ -334,8 +364,10 @@ class OverlayService : LifecycleService() {
 
             addView(createSeparator(density))
 
-            // ═══ إغلاق ═══
-            addView(createAppButton("✕ إيقاف", 0xFFF44336.toInt(), density) {
+            // إيقاف
+            addView(createAppButton(
+                "✕ إيقاف", 0xFFF44336.toInt(), density
+            ) {
                 stopEverything()
                 stopSelf()
             })
@@ -343,13 +375,9 @@ class OverlayService : LifecycleService() {
     }
 
     private fun createAppButton(
-        text: String,
-        color: Int,
-        density: Float,
-        onClick: () -> Unit
+        text: String, color: Int, density: Float, onClick: () -> Unit
     ): TextView {
         val pad = (12 * density).toInt()
-
         return TextView(this@OverlayService).apply {
             this.text = text
             setTextColor(color)
@@ -360,10 +388,6 @@ class OverlayService : LifecycleService() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 (44 * density).toInt()
             )
-            background = GradientDrawable().apply {
-                cornerRadius = 8 * density
-                setColor(0x00000000)
-            }
             setOnClickListener { onClick() }
         }
     }
@@ -393,7 +417,7 @@ class OverlayService : LifecycleService() {
         panel.animate().alpha(1f).setDuration(200).start()
 
         val params = widgetView?.layoutParams as? WindowManager.LayoutParams ?: return
-        params.width = (280 * density).toInt()
+        params.width = (300 * density).toInt()
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         try {
@@ -421,9 +445,6 @@ class OverlayService : LifecycleService() {
         } catch (_: Exception) {}
     }
 
-    // ═══════════════════════════════════════════
-    // مساعدة
-    // ═══════════════════════════════════════════
     private fun getAppName(pkg: String): String {
         return try {
             val info = packageManager.getApplicationInfo(pkg, 0)
@@ -435,22 +456,18 @@ class OverlayService : LifecycleService() {
 
     private fun stopEverything() {
         isRunning = false
-        handler.removeCallbacks(relaunchRunnable)
+        app1Launched = false
+        handler.removeCallbacks(checkRunnable)
         removeWidget()
     }
 
     private fun removeWidget() {
         widgetView?.let {
-            try {
-                windowManager?.removeView(it)
-            } catch (_: Exception) {}
+            try { windowManager?.removeView(it) } catch (_: Exception) {}
         }
         widgetView = null
     }
 
-    // ═══════════════════════════════════════════
-    // إشعارات
-    // ═══════════════════════════════════════════
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
